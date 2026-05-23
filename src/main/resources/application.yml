@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: campus-trade-backend
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+app:
+  auth:
+    token-ttl-minutes: 720
+  cache:
+    item-detail-ttl-seconds: 1800
+    null-item-ttl-seconds: 120
+    random-jitter-seconds: 300
+    hot-rank-key: item:hot:rank
+  order-timeout:
+    hours: 24
+    scan-delay: 60000
+    batch-size: 50
+    queue-key: order:timeout:zset
+  outbox:
+    publish-delay: 3000
+    batch-size: 20
+    max-retry: 5
+  rabbitmq:
+    notification-exchange: campustrade.notification.exchange
+    notification-routing-key: notification.created
+    notification-queue: campustrade.notification.queue
+  idempotency:
+    appointment-ttl-seconds: 300
+  demo:
+    seed-data: true

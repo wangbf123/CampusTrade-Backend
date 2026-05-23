@@ -1,0 +1,31 @@
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: campustrade-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+
+  mysql:
+    image: mysql:8.3
+    container_name: campustrade-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: campus_trade
+      MYSQL_USER: campus
+      MYSQL_PASSWORD: campus123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docs/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: campustrade-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+volumes:
+  mysql-data:
