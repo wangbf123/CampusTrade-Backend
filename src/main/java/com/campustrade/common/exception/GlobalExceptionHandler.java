@@ -2,14 +2,20 @@ package com.campustrade.common.exception;
 
 import com.campustrade.common.web.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(BizException.class)
     public ResponseEntity<ApiResponse<Void>> handleBizException(BizException exception) {
@@ -23,7 +29,7 @@ public class GlobalExceptionHandler {
         String message = exception.getBindingResult().getFieldErrors().stream()
                 .findFirst()
                 .map(error -> error.getField() + " " + error.getDefaultMessage())
-                .orElse("请求参数不合法");
+                .orElse("Invalid request parameter");
         return ResponseEntity.badRequest().body(ApiResponse.fail(400, message));
     }
 
@@ -32,10 +38,21 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(ApiResponse.fail(400, exception.getMessage()));
     }
 
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(MaxUploadSizeExceededException exception) {
+        return ResponseEntity.badRequest().body(ApiResponse.fail(400, "Uploaded file is too large"));
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMultipart(MultipartException exception) {
+        return ResponseEntity.badRequest().body(ApiResponse.fail(400, "Invalid multipart request"));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnexpected(Exception exception) {
+        log.error("Unhandled request exception", exception);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.fail(500, "服务器内部错误"));
+                .body(ApiResponse.fail(500, "Internal server error"));
     }
 }

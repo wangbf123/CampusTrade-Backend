@@ -1,6 +1,7 @@
 package com.campustrade.message.repository;
 
 import com.campustrade.message.model.Message;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -12,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Repository
+@Profile("!mysql")
 public class InMemoryMessageRepository implements MessageRepository {
 
     private final AtomicLong idGenerator = new AtomicLong(4000);
@@ -43,6 +45,14 @@ public class InMemoryMessageRepository implements MessageRepository {
     }
 
     @Override
+    public List<Message> findByReceiverId(Long receiverId, int page, int size) {
+        return findByReceiverId(receiverId).stream()
+                .skip(offset(page, size))
+                .limit(Math.max(1, size))
+                .toList();
+    }
+
+    @Override
     public Optional<Message> findById(Long id) {
         return Optional.ofNullable(messages.get(id));
     }
@@ -51,5 +61,11 @@ public class InMemoryMessageRepository implements MessageRepository {
     public Optional<Message> findByEventId(String eventId) {
         Long id = eventIdIndex.get(eventId);
         return id == null ? Optional.empty() : findById(id);
+    }
+
+    private long offset(int page, int size) {
+        int safePage = Math.max(1, page);
+        int safeSize = Math.max(1, size);
+        return (long) (safePage - 1) * safeSize;
     }
 }

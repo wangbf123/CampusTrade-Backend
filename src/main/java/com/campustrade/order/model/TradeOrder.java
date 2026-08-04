@@ -1,9 +1,15 @@
 package com.campustrade.order.model;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+
 import java.time.LocalDateTime;
 
+@TableName("trade_order")
 public class TradeOrder {
 
+    @TableId(type = IdType.AUTO)
     private Long id;
     private String orderNo;
     private Long itemId;

@@ -2,12 +2,12 @@
 
 ## 说明
 
-当前项目默认使用内存仓储，适合面试现场快速演示；Redis、RabbitMQ 可通过 profile 切换。本文档用于项目展示和面试说明，分为两部分：
+当前项目默认提供内存仓储以便快速验证；`mysql` profile 下使用 MyBatis-Plus + MySQL 持久化，`redis/rabbitmq` profile 下启用 Redis 和 RabbitMQ。本文档分为两部分：
 
-- 本地验证结果：用于证明核心链路可运行、状态一致性和幂等逻辑可验证。
-- JMeter 正式压测口径：用于后续替换为真实 MySQL/Redis/RabbitMQ 环境后的正式压测报告。
+- 自动化 HTTP 压测结果：用于证明 MyBatis-Plus、MySQL、Redis、RabbitMQ、限流和幂等链路可运行。
+- JMeter 正式压测口径：用于后续扩展为更大并发、更长时间、更接近生产环境的正式压测报告。
 
-不要在简历中把本地内存模式数据包装成生产性能数据。简历里可以写“使用 JMeter 对核心接口进行压测，并针对缓存、限流和并发预约进行验证”，面试时说明环境和口径。
+本机数据只代表对应硬件、配置和请求模型下的结果，不能直接作为生产容量。引用数据时必须同时保留测试环境、并发模型、持续时间、成功率和延迟口径。
 
 ## 测试环境
 
@@ -17,11 +17,15 @@
 OS: Windows 11
 JDK: Java 21
 Spring Boot: 3.3.7
-运行模式: 默认内存仓储 + 内存缓存 + 本地 Outbox 发布器
-启动端口: 18080
+运行模式: mysql,redis,rabbitmq profile
+启动端口: 8080
+MySQL: mysql:8.3，宿主机端口 33306
+Redis: redis:7.2-alpine
+RabbitMQ: rabbitmq:3.13-management-alpine
+持久化: MyBatis-Plus BaseMapper + LambdaQueryWrapper/LambdaUpdateWrapper
 ```
 
-中间件压测推荐环境：
+更高规格压测推荐环境：
 
 ```text
 MySQL 8.x
@@ -64,6 +68,96 @@ BUILD SUCCESS
 ```text
 GET /api/items
 响应 code = 0
+```
+
+## JMeter 压测实测结果（2026-06-23）
+
+这组数据来自 Apache JMeter 5.6.3，本机以 `mysql,redis,rabbitmq` profile 启动应用，MySQL、Redis 和 RabbitMQ 由 Docker Compose 提供。压测计划覆盖商品详情缓存、热门榜单、商品搜索、预约创建幂等键和预约限流探测。
+
+测试命令：
+
+```powershell
+docker compose up -d mysql redis rabbitmq
+mvn -DskipTests package
+powershell -ExecutionPolicy Bypass -File scripts\run-jmeter-pressure-test.ps1 -Profile "mysql,redis,rabbitmq" -Port 18080 -Concurrency 30 -ScenarioLoops 10 -AppointmentThreads 6 -AppointmentLoops 2 -RateProbeThreads 5 -RateProbeLoops 3
+```
+
+结果文件：
+
+- [JMeter JTL 原始结果](pressure-results/jmeter-2026-06-23T02-32-38-963Z.jtl)
+- [JMeter Markdown 汇总](pressure-results/jmeter-2026-06-23T02-32-38-963Z.summary.md)
+- [JMeter JSON 汇总](pressure-results/jmeter-2026-06-23T02-32-38-963Z.summary.json)
+
+结果汇总：
+
+| 场景 | 请求数 | 吞吐量(req/s) | 平均响应 | P95 | P99 | 失败 | 状态 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 商品详情缓存 `GET /api/items/{id}` | 300 | 109.13 | 74.74 ms | 160 ms | 195 ms | 0 | `200: 300` |
+| 热门商品榜单 `GET /api/items/hot` | 300 | 143.27 | 14.57 ms | 29 ms | 45 ms | 0 | `200: 300` |
+| 商品搜索 `GET /api/items?keyword=iPad` | 300 | 147.78 | 11.91 ms | 23 ms | 29 ms | 0 | `200: 300` |
+| 预约创建 + 幂等键 | 12 | 31.09 | 159.17 ms | 299 ms | 299 ms | 2 | `200: 10, 429: 2` |
+| 预约限流探测 | 15 | 18.63 | 18.53 ms | 31 ms | 31 ms | 15 | `429: 15` |
+
+结果解读：
+
+```text
+1. 商品详情、热门榜单、商品搜索三个读接口在 30 并发、各 300 次请求下均 0 失败，可作为缓存读和索引查询链路的本机稳定性证据。
+2. 热门榜单接口平均响应 14.57 ms，P95 为 29 ms；商品搜索接口平均响应 11.91 ms，P95 为 23 ms，说明读路径在本机压测下延迟稳定。
+3. 预约创建接口在同一用户 60 秒最多 10 次的限流规则下，12 次请求中 10 次成功、2 次返回 429，符合业务限流预期。
+4. 后续 15 次预约限流探测全部返回 429，证明 Redis + Lua 限流链路在压测中生效。
+5. 该结果用于证明本机完整链路可运行，包括 MyBatis-Plus + MySQL、Redis 缓存/限流、RabbitMQ + Outbox 异步通知；不要表述为生产容量。
+```
+
+## MySQL + Redis + RabbitMQ 实测结果（2026-05-28）
+
+这组数据来自本机真实 HTTP 压测，应用以 `mysql,redis,rabbitmq` profile 启动，MySQL、Redis 和 RabbitMQ 由 Docker Compose 提供。仓储层使用 MyBatis-Plus + MySQL，压测后验证了 `trade_order`、`notification_outbox`、`message` 等核心表写入，以及 RabbitMQ 队列无积压。
+
+测试命令：
+
+```powershell
+docker compose up -d mysql redis rabbitmq
+mvn -DskipTests package
+powershell -ExecutionPolicy Bypass -File scripts\run-pressure-test.ps1 -Profile "mysql,redis,rabbitmq" -ScenarioRequests 300 -Concurrency 30 -AppointmentRequests 12 -AsyncDrainSeconds 8
+```
+
+测试环境：
+
+```text
+OS: Windows 11
+JDK: Java 21
+Spring Boot: 3.3.7
+运行模式: mysql,redis,rabbitmq profile
+应用端口: 8080
+MySQL: mysql:8.3
+Redis: redis:7.2-alpine
+RabbitMQ: rabbitmq:3.13-management-alpine
+压测工具: scripts/pressure-test.mjs，基于 Node fetch
+```
+
+结果文件：
+
+- [Markdown 结果](pressure-results/pressure-2026-05-28T04-03-36-225Z.md)
+- [JSON 结果](pressure-results/pressure-2026-05-28T04-03-36-225Z.json)
+
+结果汇总：
+
+| 场景 | 请求数 | 并发 | 吞吐量(req/s) | 平均响应 | P95 | P99 | 失败 | 状态 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 商品详情缓存 `GET /api/items/{id}` | 300 | 30 | 140.49 | 202.37 ms | 289.74 ms | 297.93 ms | 0 | `200: 300` |
+| 热门商品榜单 `GET /api/items/hot` | 300 | 30 | 301.71 | 96.40 ms | 178.74 ms | 214.99 ms | 0 | `200: 300` |
+| 商品搜索 `GET /api/items?keyword=iPad` | 300 | 30 | 543.37 | 52.48 ms | 88.10 ms | 104.17 ms | 0 | `200: 300` |
+| 预约创建 + 幂等键 | 12 | 6 | 63.32 | 89.23 ms | 144.15 ms | 144.15 ms | 2 | `200: 10, 429: 2` |
+| 预约限流探测 | 15 | 5 | 648.90 | 6.81 ms | 9.91 ms | 9.91 ms | 15 | `429: 15` |
+
+结果解读：
+
+```text
+1. 商品详情、热门榜单、商品搜索三个公开读接口在 30 并发、各 300 次请求下均 0 失败。
+2. 商品详情压测前先执行 50 次预热请求，后续请求命中 Redis 商品详情缓存，同时会通过 Redis ZSet 累计热门榜单热度。
+3. 预约创建接口配置为同一用户 60 秒最多 10 次，因此 12 次并发预约中 10 次进入业务逻辑，2 次返回 429，符合限流预期。
+4. 限流探测场景在前一轮已经打满预约限流窗口后继续请求，15 次全部返回 429，证明 Redis + Lua 限流生效。
+5. 压测结束后数据库验证：`trade_order`、`notification_outbox` 均有新增记录，Outbox 状态为 `PUBLISHED`，RabbitMQ 队列 `messages_ready = 0`，`message` 表有新增通知记录。
+6. 这组数据用于验证 MyBatis-Plus + MySQL + Redis + RabbitMQ 全链路可运行，不构成生产容量承诺。
 ```
 
 ## 本地轻量 Benchmark
@@ -388,7 +482,7 @@ message 包含 重复提交
 冲突响应数量 = N - 1
 ```
 
-## 简历可写版本
+## 工程结论摘要
 
 ```text
 使用 JMeter 对商品详情、热门商品榜单、预约确认、接口限流和防重复提交等核心接口进行压测。针对商品详情读多写少场景引入 Redis 缓存，针对超时订单处理引入 Redis ZSet 队列，针对并发确认使用状态条件更新，验证同一商品在并发确认下仅一个订单成功。
@@ -396,8 +490,8 @@ message 包含 重复提交
 
 ## 注意事项
 
-压测报告中的具体数值需要在你最终演示环境中重新跑一遍后填写。不要把内存模式下的本地结果当作 MySQL/Redis/RabbitMQ 真实部署结果。面试时可以主动说明：
+压测报告中的具体数值需要在最终运行环境中重新执行后填写，不应把本机结果当作生产容量承诺。对外引用时应明确说明：
 
 ```text
-我本地有内存模式用于快速演示，也预留了 Redis/RabbitMQ profile。正式压测会使用 MySQL + Redis + RabbitMQ 环境，并分别对缓存命中、并发确认和消息幂等进行验证。
+我本地有内存模式用于快速演示，也有 mysql,redis,rabbitmq 全链路模式用于验证 MyBatis-Plus 落库、缓存命中、接口限流、Outbox 投递和消息消费。压测数据是本机环境结果，不代表生产容量。
 ```

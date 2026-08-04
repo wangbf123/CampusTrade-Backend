@@ -26,13 +26,36 @@ class OutboxPublishServiceTest {
                 5
         );
 
-        NotificationOutboxEvent event = outboxService.enqueue(1001L, "ORDER_COMPLETED", "交易已完成", "记得评价", 3001L);
+        NotificationOutboxEvent event = outboxService.enqueue(1001L, "ORDER_COMPLETED", "Order completed", "Remember to review", 3001L);
 
         int published = publishService.publishPending();
 
         assertEquals(1, published);
         assertEquals(OutboxStatus.PUBLISHED, outboxRepository.findByEventId(event.getEventId()).orElseThrow().getStatus());
         assertEquals(1, messageRepository.findByReceiverId(1001L).size());
+    }
+
+    @Test
+    void shouldMarkEventForRetryWhenPublishFails() {
+        InMemoryNotificationOutboxRepository outboxRepository = new InMemoryNotificationOutboxRepository();
+        NotificationOutboxService outboxService = new NotificationOutboxService(outboxRepository);
+        OutboxPublishService publishService = new OutboxPublishService(
+                outboxRepository,
+                event -> {
+                    throw new IllegalStateException("mq unavailable");
+                },
+                20,
+                5
+        );
+
+        NotificationOutboxEvent event = outboxService.enqueue(1001L, "ORDER_COMPLETED", "Order completed", "Remember to review", 3001L);
+
+        int published = publishService.publishPending();
+
+        assertEquals(0, published);
+        NotificationOutboxEvent latest = outboxRepository.findByEventId(event.getEventId()).orElseThrow();
+        assertEquals(OutboxStatus.PENDING, latest.getStatus());
+        assertEquals(1, latest.getRetryCount());
     }
 
     @Test
@@ -44,8 +67,8 @@ class OutboxPublishServiceTest {
                 "event-1",
                 1001L,
                 "ORDER_CANCELLED",
-                "预约已取消",
-                "订单已取消",
+                "Appointment cancelled",
+                "Order has been cancelled",
                 3001L
         );
 

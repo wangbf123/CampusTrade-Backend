@@ -3,9 +3,13 @@ package com.campustrade.notification.rabbitmq;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
+import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.boot.autoconfigure.amqp.RabbitTemplateCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -20,8 +24,21 @@ public class RabbitNotificationConfig {
     }
 
     @Bean
+    public DirectExchange notificationDeadLetterExchange(RabbitNotificationProperties properties) {
+        return new DirectExchange(properties.getNotificationDeadLetterExchange(), true, false);
+    }
+
+    @Bean
     public Queue notificationQueue(RabbitNotificationProperties properties) {
-        return new Queue(properties.getNotificationQueue(), true);
+        return QueueBuilder.durable(properties.getNotificationQueue())
+                .deadLetterExchange(properties.getNotificationDeadLetterExchange())
+                .deadLetterRoutingKey(properties.getNotificationDeadLetterRoutingKey())
+                .build();
+    }
+
+    @Bean
+    public Queue notificationDeadLetterQueue(RabbitNotificationProperties properties) {
+        return QueueBuilder.durable(properties.getNotificationDeadLetterQueue()).build();
     }
 
     @Bean
@@ -36,7 +53,32 @@ public class RabbitNotificationConfig {
     }
 
     @Bean
+    public Binding notificationDeadLetterBinding(
+            DirectExchange notificationDeadLetterExchange,
+            Queue notificationDeadLetterQueue,
+            RabbitNotificationProperties properties
+    ) {
+        return BindingBuilder.bind(notificationDeadLetterQueue)
+                .to(notificationDeadLetterExchange)
+                .with(properties.getNotificationDeadLetterRoutingKey());
+    }
+
+    @Bean
     public MessageConverter rabbitMessageConverter() {
         return new Jackson2JsonMessageConverter();
+    }
+
+    @Bean
+    public RabbitTemplateCustomizer rabbitTemplateCustomizer() {
+        return new RabbitTemplateCustomizer() {
+            @Override
+            public void customize(RabbitTemplate rabbitTemplate) {
+            rabbitTemplate.setMandatory(true);
+            rabbitTemplate.setBeforePublishPostProcessors(message -> {
+                message.getMessageProperties().setDeliveryMode(MessageDeliveryMode.PERSISTENT);
+                return message;
+            });
+            }
+        };
     }
 }

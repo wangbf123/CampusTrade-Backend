@@ -10,6 +10,8 @@ public record ItemQuery(
         String campus,
         BigDecimal minPrice,
         BigDecimal maxPrice,
-        ItemStatus status
+        ItemStatus status,
+        int page,
+        int size
 ) {
 }

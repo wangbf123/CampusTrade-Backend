@@ -1,12 +1,19 @@
 package com.campustrade.item.model;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+@TableName("item")
 public class Item {
 
+    @TableId(type = IdType.AUTO)
     private Long id;
     private Long sellerId;
     private String title;
@@ -20,6 +27,7 @@ public class Item {
     private long viewCount;
     private long favoriteCount;
     private long version;
+    @TableField(exist = false)
     private List<String> imageUrls = new ArrayList<>();
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

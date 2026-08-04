@@ -1,0 +1,113 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: campustrade-app
+    env_file:
+      - ${APP_ENV_FILE:-.env.prod}
+    environment:
+      TZ: Asia/Shanghai
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      - uploads-data:/app/uploads
+    networks:
+      - campus-trade-net
+
+  mysql:
+    image: mysql:8.3
+    container_name: campustrade-mysql
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USERNAME}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command:
+      - --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql-data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - campus-trade-net
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: campustrade-redis
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        fi
+        exec redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG; else redis-cli ping | grep -q PONG; fi"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - campus-trade-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: campustrade-rabbitmq
+    environment:
+      TZ: Asia/Shanghai
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - campus-trade-net
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: campustrade-nginx
+    depends_on:
+      - app
+    environment:
+      DOMAIN: ${DOMAIN:-_}
+      ACTUATOR_ALLOW_CIDR: ${ACTUATOR_ALLOW_CIDR:-127.0.0.1/32}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/templates/http.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./deploy/nginx/certs:/etc/nginx/certs:ro
+    restart: unless-stopped
+    networks:
+      - campus-trade-net
+
+volumes:
+  mysql-data:
+  redis-data:
+  uploads-data:
+
+networks:
+  campus-trade-net:
+    driver: bridge

@@ -1,7 +1,11 @@
 package com.campustrade.auth.security;
 
 import com.campustrade.common.exception.BizException;
+import com.campustrade.common.web.AuthenticatedUser;
 import com.campustrade.common.web.CurrentUserContext;
+import com.campustrade.user.model.User;
+import com.campustrade.user.model.UserStatus;
+import com.campustrade.user.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Component;
@@ -11,9 +15,11 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class AuthInterceptor implements HandlerInterceptor {
 
     private final TokenService tokenService;
+    private final UserRepository userRepository;
 
-    public AuthInterceptor(TokenService tokenService) {
+    public AuthInterceptor(TokenService tokenService, UserRepository userRepository) {
         this.tokenService = tokenService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -26,8 +32,14 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (token != null && token.startsWith("Bearer ")) {
             token = token.substring("Bearer ".length());
         }
-        CurrentUserContext.set(tokenService.resolve(token)
-                .orElseThrow(() -> BizException.unauthorized("登录已过期或 token 不合法")));
+        AuthenticatedUser tokenUser = tokenService.resolve(token)
+                .orElseThrow(() -> BizException.unauthorized("登录已过期或 token 不合法"));
+        User user = userRepository.findById(tokenUser.id())
+                .orElseThrow(() -> BizException.unauthorized("用户不存在，请重新登录"));
+        if (user.getStatus() == UserStatus.BANNED) {
+            throw BizException.forbidden("账号已被封禁");
+        }
+        CurrentUserContext.set(new AuthenticatedUser(user.getId(), user.getUsername(), user.getRole()));
         return true;
     }
 

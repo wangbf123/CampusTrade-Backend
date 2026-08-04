@@ -2,6 +2,7 @@ package com.campustrade.order.repository;
 
 import com.campustrade.order.model.OrderStatus;
 import com.campustrade.order.model.TradeOrder;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -14,6 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 @Repository
+@Profile("!mysql")
 public class InMemoryTradeOrderRepository implements TradeOrderRepository {
 
     private final AtomicLong idGenerator = new AtomicLong(3000);
@@ -46,10 +48,26 @@ public class InMemoryTradeOrderRepository implements TradeOrderRepository {
     }
 
     @Override
+    public List<TradeOrder> findByBuyerId(Long buyerId, int page, int size) {
+        return findByBuyerId(buyerId).stream()
+                .skip(offset(page, size))
+                .limit(Math.max(1, size))
+                .toList();
+    }
+
+    @Override
     public List<TradeOrder> findBySellerId(Long sellerId) {
         return orders.values().stream()
                 .filter(order -> order.getSellerId().equals(sellerId))
                 .sorted(Comparator.comparing(TradeOrder::getCreatedAt).reversed())
+                .toList();
+    }
+
+    @Override
+    public List<TradeOrder> findBySellerId(Long sellerId, int page, int size) {
+        return findBySellerId(sellerId).stream()
+                .skip(offset(page, size))
+                .limit(Math.max(1, size))
                 .toList();
     }
 
@@ -79,5 +97,11 @@ public class InMemoryTradeOrderRepository implements TradeOrderRepository {
         order.setVersion(order.getVersion() + 1);
         order.setUpdatedAt(LocalDateTime.now());
         return true;
+    }
+
+    private long offset(int page, int size) {
+        int safePage = Math.max(1, page);
+        int safeSize = Math.max(1, size);
+        return (long) (safePage - 1) * safeSize;
     }
 }

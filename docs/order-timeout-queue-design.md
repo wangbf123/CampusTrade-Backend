@@ -83,10 +83,11 @@ ZREM order:timeout:zset {orderId}
 
 ## 定时任务
 
-定时任务每轮只拉取已经到期的订单 ID：
+定时任务每轮只拉取已经到期的订单 ID。Redis 实现使用 Lua 脚本把“查询到期订单”和“从 ZSet 删除订单”放在 Redis 内部原子执行，避免多实例定时任务同时拉到同一批订单。
 
 ```text
-ZRANGEBYSCORE order:timeout:zset 0 now LIMIT 0 50
+ZRANGEBYSCORE order:timeout:zset -inf now LIMIT 0 50
+ZREM order:timeout:zset {orderIds}
 ```
 
 然后回查订单并校验状态：
@@ -96,7 +97,6 @@ ZRANGEBYSCORE order:timeout:zset 0 now LIMIT 0 50
 -> 如果不是 PENDING：从队列移除，跳过
 -> 如果是 PENDING：条件更新为 EXPIRED
 -> 写 Outbox 通知事件
--> 从队列移除
 ```
 
 ## 为什么还要回查数据库
@@ -105,14 +105,11 @@ Redis 只负责“提醒哪些订单可能到期”，最终状态仍以 MySQL �
 
 比如订单已经被卖家确认，但 Redis 删除失败或任务重复拉取到了这个 ID，系统回查发现状态不是 `PENDING`，就不会错误取消订单。
 
-## 面试表达
+## 方案总结
 
-可以这样讲：
-
-> 初版我可以用定时任务扫 `trade_order` 表中 `PENDING` 且 `expire_at <= now` 的订单，但这会产生周期性扫表压力。后续我把待超时订单写入 Redis ZSet，score 是超时时间戳，value 是订单 ID。定时任务每次只拉取当前时间之前的订单 ID，再回查数据库并通过 `WHERE id = ? AND status = 'PENDING'` 条件更新为 `EXPIRED`。Redis 只作为延迟提醒，最终一致性由数据库状态校验保证。
+直接定时扫描 `trade_order` 表中 `PENDING` 且 `expire_at <= now` 的订单会产生周期性扫表压力。当前方案把待超时订单写入 Redis ZSet，score 是超时时间戳，value 是订单 ID；定时任务通过 Lua 脚本原子拉取并删除到期订单，再回查数据库并使用 `WHERE id = ? AND status = 'PENDING'` 条件更新为 `EXPIRED`。Redis 只承担延迟提醒，最终一致性仍由数据库状态校验保证。
 
 ## 生产增强
 
-- 多实例部署时，处理到期订单可以用 Lua 脚本原子拉取并删除，避免多个实例重复处理。
 - 也可以用 Redisson `RDelayedQueue` 或 RabbitMQ 延迟队列替代 ZSet。
 - 对超时取消动作记录 `order_event`，方便后台排查。

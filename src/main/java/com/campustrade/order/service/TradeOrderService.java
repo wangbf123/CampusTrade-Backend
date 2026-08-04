@@ -1,6 +1,7 @@
 package com.campustrade.order.service;
 
 import com.campustrade.common.exception.BizException;
+import com.campustrade.common.tx.TransactionHooks;
 import com.campustrade.common.web.AuthenticatedUser;
 import com.campustrade.item.model.Item;
 import com.campustrade.item.model.ItemStatus;
@@ -14,16 +15,26 @@ import com.campustrade.order.model.TradeOrder;
 import com.campustrade.order.repository.TradeOrderRepository;
 import com.campustrade.order.timeout.OrderTimeoutQueue;
 import com.campustrade.risk.idempotency.IdempotencyService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 
 @Service
 public class TradeOrderService {
+
+    private static final Logger log = LoggerFactory.getLogger(TradeOrderService.class);
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final TradeOrderRepository orderRepository;
     private final ItemService itemService;
@@ -33,6 +44,8 @@ public class TradeOrderService {
     private final IdempotencyService idempotencyService;
     private final long timeoutHours;
     private final int timeoutBatchSize;
+    private final long timeoutRetryDelaySeconds;
+    private final TransactionTemplate transactionTemplate;
 
     public TradeOrderService(
             TradeOrderRepository orderRepository,
@@ -41,8 +54,10 @@ public class TradeOrderService {
             OrderStateMachine stateMachine,
             OrderTimeoutQueue orderTimeoutQueue,
             IdempotencyService idempotencyService,
+            ObjectProvider<PlatformTransactionManager> transactionManagerProvider,
             @Value("${app.order-timeout.hours:24}") long timeoutHours,
-            @Value("${app.order-timeout.batch-size:50}") int timeoutBatchSize
+            @Value("${app.order-timeout.batch-size:50}") int timeoutBatchSize,
+            @Value("${app.order-timeout.retry-delay-seconds:60}") long timeoutRetryDelaySeconds
     ) {
         this.orderRepository = orderRepository;
         this.itemService = itemService;
@@ -52,8 +67,12 @@ public class TradeOrderService {
         this.idempotencyService = idempotencyService;
         this.timeoutHours = timeoutHours;
         this.timeoutBatchSize = timeoutBatchSize;
+        this.timeoutRetryDelaySeconds = timeoutRetryDelaySeconds;
+        PlatformTransactionManager transactionManager = transactionManagerProvider.getIfAvailable();
+        this.transactionTemplate = transactionManager == null ? null : new TransactionTemplate(transactionManager);
     }
 
+    @Transactional
     public OrderResponse createAppointment(
             AuthenticatedUser buyer,
             Long itemId,
@@ -62,11 +81,12 @@ public class TradeOrderService {
     ) {
         Item item = itemService.requireItem(itemId);
         if (item.getSellerId().equals(buyer.id())) {
-            throw BizException.badRequest("不能预约自己的商品");
+            throw BizException.badRequest("You cannot appoint your own item");
         }
         if (item.getStatus() != ItemStatus.ON_SALE) {
-            throw BizException.conflict("商品当前不可预约");
+            throw BizException.conflict("Current item is not available for appointment");
         }
+
         idempotencyService.guardAppointmentSubmit(
                 buyer.id(),
                 itemId,
@@ -84,61 +104,79 @@ public class TradeOrderService {
         order.setNote(request.note());
         order.setExpireAt(LocalDateTime.now().plusHours(timeoutHours));
         orderRepository.save(order);
-        orderTimeoutQueue.enqueue(order.getId(), order.getExpireAt());
+
+        TransactionHooks.afterCommit(() -> orderTimeoutQueue.enqueue(order.getId(), order.getExpireAt()));
 
         notificationOutboxService.enqueue(
                 item.getSellerId(),
                 "APPOINTMENT_CREATED",
-                "收到新的预约请求",
-                "用户 " + buyer.username() + " 预约了你的商品：" + item.getTitle(),
+                "New appointment request",
+                "User " + buyer.username() + " appointed your item: " + item.getTitle(),
                 order.getId()
         );
         return OrderResponse.from(order);
     }
 
-    public synchronized OrderResponse confirm(AuthenticatedUser seller, Long orderId) {
+    @Transactional
+    public OrderResponse confirm(AuthenticatedUser seller, Long orderId) {
         TradeOrder order = requireOrder(orderId);
         requireSeller(seller.id(), order);
         stateMachine.assertCanTransit(order.getStatus(), OrderStatus.CONFIRMED);
 
         boolean reserved = itemService.reserveIfOnSale(order.getItemId());
         if (!reserved) {
-            throw BizException.conflict("商品已被预约、售出或下架");
+            throw BizException.conflict("Item has already been reserved, sold, or removed");
         }
-        boolean updated = orderRepository.updateStatusIfCurrent(orderId, OrderStatus.PENDING, OrderStatus.CONFIRMED,
-                target -> target.setConfirmedAt(LocalDateTime.now()));
+
+        boolean updated = orderRepository.updateStatusIfCurrent(
+                orderId,
+                OrderStatus.PENDING,
+                OrderStatus.CONFIRMED,
+                target -> target.setConfirmedAt(LocalDateTime.now())
+        );
         if (!updated) {
-            itemService.restoreOnSaleIfReserved(order.getItemId());
-            throw BizException.conflict("订单状态已变化，确认失败");
+            throw BizException.conflict("Order status changed before confirmation");
         }
-        orderTimeoutQueue.remove(orderId);
+
+        TransactionHooks.afterCommit(() -> orderTimeoutQueue.remove(orderId));
 
         TradeOrder latest = requireOrder(orderId);
         notificationOutboxService.enqueue(
                 latest.getBuyerId(),
                 "APPOINTMENT_CONFIRMED",
-                "卖家已确认预约",
-                "卖家已确认你的预约，请按约定时间线下交易",
+                "Appointment confirmed",
+                "Seller confirmed your appointment, please trade offline on time",
                 latest.getId()
         );
         return OrderResponse.from(latest);
     }
 
-    public synchronized OrderResponse reject(AuthenticatedUser seller, Long orderId) {
+    @Transactional
+    public OrderResponse reject(AuthenticatedUser seller, Long orderId) {
         TradeOrder order = requireOrder(orderId);
         requireSeller(seller.id(), order);
         stateMachine.assertCanTransit(order.getStatus(), OrderStatus.REJECTED);
+
         boolean updated = orderRepository.updateStatusIfCurrent(orderId, OrderStatus.PENDING, OrderStatus.REJECTED, null);
         if (!updated) {
-            throw BizException.conflict("订单状态已变化，拒绝失败");
+            throw BizException.conflict("Order status changed before rejection");
         }
-        orderTimeoutQueue.remove(orderId);
+
+        TransactionHooks.afterCommit(() -> orderTimeoutQueue.remove(orderId));
+
         TradeOrder latest = requireOrder(orderId);
-        notificationOutboxService.enqueue(latest.getBuyerId(), "APPOINTMENT_REJECTED", "卖家拒绝了预约", "可以继续看看其他商品", latest.getId());
+        notificationOutboxService.enqueue(
+                latest.getBuyerId(),
+                "APPOINTMENT_REJECTED",
+                "Appointment rejected",
+                "Seller rejected your appointment, you can continue browsing other items",
+                latest.getId()
+        );
         return OrderResponse.from(latest);
     }
 
-    public synchronized OrderResponse cancel(AuthenticatedUser user, Long orderId, CancelOrderRequest request) {
+    @Transactional
+    public OrderResponse cancel(AuthenticatedUser user, Long orderId, CancelOrderRequest request) {
         TradeOrder order = requireOrder(orderId);
         requireParticipant(user.id(), order);
 
@@ -150,30 +188,57 @@ public class TradeOrderService {
             updateOrderStatus(orderId, OrderStatus.CONFIRMED, OrderStatus.CANCELLED, request.reason());
             itemService.restoreOnSaleIfReserved(order.getItemId());
         } else {
-            throw BizException.conflict("当前状态不能取消");
+            throw BizException.conflict("Current order status cannot be cancelled");
         }
-        orderTimeoutQueue.remove(orderId);
+
+        TransactionHooks.afterCommit(() -> orderTimeoutQueue.remove(orderId));
 
         TradeOrder latest = requireOrder(orderId);
         Long receiverId = user.id().equals(latest.getBuyerId()) ? latest.getSellerId() : latest.getBuyerId();
-        notificationOutboxService.enqueue(receiverId, "ORDER_CANCELLED", "预约已取消", "订单 " + latest.getOrderNo() + " 已取消", latest.getId());
+        notificationOutboxService.enqueue(
+                receiverId,
+                "ORDER_CANCELLED",
+                "Appointment cancelled",
+                "Order " + latest.getOrderNo() + " has been cancelled",
+                latest.getId()
+        );
         return OrderResponse.from(latest);
     }
 
-    public synchronized OrderResponse complete(AuthenticatedUser user, Long orderId) {
+    @Transactional
+    public OrderResponse complete(AuthenticatedUser user, Long orderId) {
         TradeOrder order = requireOrder(orderId);
         requireParticipant(user.id(), order);
         stateMachine.assertCanTransit(order.getStatus(), OrderStatus.COMPLETED);
+
         itemService.markSoldIfReserved(order.getItemId());
-        boolean updated = orderRepository.updateStatusIfCurrent(orderId, OrderStatus.CONFIRMED, OrderStatus.COMPLETED,
-                target -> target.setCompletedAt(LocalDateTime.now()));
+        boolean updated = orderRepository.updateStatusIfCurrent(
+                orderId,
+                OrderStatus.CONFIRMED,
+                OrderStatus.COMPLETED,
+                target -> target.setCompletedAt(LocalDateTime.now())
+        );
         if (!updated) {
-            throw BizException.conflict("订单状态已变化，完成失败");
+            throw BizException.conflict("Order status changed before completion");
         }
-        orderTimeoutQueue.remove(orderId);
+
+        TransactionHooks.afterCommit(() -> orderTimeoutQueue.remove(orderId));
+
         TradeOrder latest = requireOrder(orderId);
-        notificationOutboxService.enqueue(latest.getBuyerId(), "ORDER_COMPLETED", "交易已完成", "记得给对方评价，提升信用分", latest.getId());
-        notificationOutboxService.enqueue(latest.getSellerId(), "ORDER_COMPLETED", "交易已完成", "记得给对方评价，提升信用分", latest.getId());
+        notificationOutboxService.enqueue(
+                latest.getBuyerId(),
+                "ORDER_COMPLETED",
+                "Order completed",
+                "Trade completed, do not forget to leave a review",
+                latest.getId()
+        );
+        notificationOutboxService.enqueue(
+                latest.getSellerId(),
+                "ORDER_COMPLETED",
+                "Order completed",
+                "Trade completed, do not forget to leave a review",
+                latest.getId()
+        );
         return OrderResponse.from(latest);
     }
 
@@ -182,60 +247,110 @@ public class TradeOrderService {
         int count = 0;
         for (Long orderId : dueOrderIds) {
             try {
-                TradeOrder order = requireOrder(orderId);
-                if (order.getStatus() != OrderStatus.PENDING) {
-                    orderTimeoutQueue.remove(orderId);
-                    continue;
-                }
-                stateMachine.assertCanTransit(order.getStatus(), OrderStatus.EXPIRED);
-                boolean updated = orderRepository.updateStatusIfCurrent(order.getId(), OrderStatus.PENDING, OrderStatus.EXPIRED, null);
-                if (updated) {
+                if (Boolean.TRUE.equals(runInTransaction(() -> expireOrderIfPending(orderId)))) {
                     count++;
-                    orderTimeoutQueue.remove(orderId);
-                    notificationOutboxService.enqueue(order.getBuyerId(), "ORDER_EXPIRED", "预约已超时", "卖家未及时确认，预约已自动取消", order.getId());
-                    notificationOutboxService.enqueue(order.getSellerId(), "ORDER_EXPIRED", "预约已超时", "你未及时处理预约，系统已自动取消", order.getId());
-                } else {
-                    orderTimeoutQueue.remove(orderId);
                 }
             } catch (BizException ignored) {
-                orderTimeoutQueue.remove(orderId);
-                // 状态已经被其他操作推进时，本轮任务跳过即可。
+                // Order may already be handled by user action or another concurrent update.
+            } catch (Exception exception) {
+                requeueExpiredOrder(orderId);
+                log.warn("Failed to expire order {}, requeued for retry", orderId, exception);
             }
         }
         return count;
     }
 
-    public List<OrderResponse> myBuyOrders(Long buyerId) {
-        return orderRepository.findByBuyerId(buyerId).stream().map(OrderResponse::from).toList();
+    public List<OrderResponse> myBuyOrders(Long buyerId, int page, int size) {
+        return orderRepository.findByBuyerId(buyerId, safePage(page), safeSize(size)).stream()
+                .map(OrderResponse::from)
+                .toList();
     }
 
-    public List<OrderResponse> mySellOrders(Long sellerId) {
-        return orderRepository.findBySellerId(sellerId).stream().map(OrderResponse::from).toList();
+    public List<OrderResponse> mySellOrders(Long sellerId, int page, int size) {
+        return orderRepository.findBySellerId(sellerId, safePage(page), safeSize(size)).stream()
+                .map(OrderResponse::from)
+                .toList();
     }
 
     public TradeOrder requireOrder(Long orderId) {
         return orderRepository.findById(orderId)
-                .orElseThrow(() -> BizException.notFound("订单不存在"));
+                .orElseThrow(() -> BizException.notFound("Order does not exist"));
+    }
+
+    private boolean expireOrderIfPending(Long orderId) {
+        TradeOrder order = requireOrder(orderId);
+        if (order.getStatus() != OrderStatus.PENDING) {
+            TransactionHooks.afterCommit(() -> orderTimeoutQueue.remove(orderId));
+            return false;
+        }
+
+        stateMachine.assertCanTransit(order.getStatus(), OrderStatus.EXPIRED);
+        boolean updated = orderRepository.updateStatusIfCurrent(order.getId(), OrderStatus.PENDING, OrderStatus.EXPIRED, null);
+        if (!updated) {
+            TransactionHooks.afterCommit(() -> orderTimeoutQueue.remove(orderId));
+            return false;
+        }
+
+        TransactionHooks.afterCommit(() -> orderTimeoutQueue.remove(orderId));
+
+        notificationOutboxService.enqueue(
+                order.getBuyerId(),
+                "ORDER_EXPIRED",
+                "Appointment expired",
+                "Seller did not confirm in time, the appointment was auto-cancelled",
+                order.getId()
+        );
+        notificationOutboxService.enqueue(
+                order.getSellerId(),
+                "ORDER_EXPIRED",
+                "Appointment expired",
+                "You did not process the appointment in time, the system cancelled it automatically",
+                order.getId()
+        );
+        return true;
+    }
+
+    private void requeueExpiredOrder(Long orderId) {
+        orderTimeoutQueue.enqueue(orderId, LocalDateTime.now().plusSeconds(timeoutRetryDelaySeconds));
+    }
+
+    private <T> T runInTransaction(Supplier<T> supplier) {
+        if (transactionTemplate == null) {
+            return supplier.get();
+        }
+        return transactionTemplate.execute(status -> supplier.get());
     }
 
     private void updateOrderStatus(Long orderId, OrderStatus expected, OrderStatus next, String cancelReason) {
-        boolean updated = orderRepository.updateStatusIfCurrent(orderId, expected, next,
-                target -> target.setCancelReason(cancelReason));
+        boolean updated = orderRepository.updateStatusIfCurrent(
+                orderId,
+                expected,
+                next,
+                target -> target.setCancelReason(cancelReason)
+        );
         if (!updated) {
-            throw BizException.conflict("订单状态已变化，操作失败");
+            throw BizException.conflict("Order status changed before current operation");
         }
     }
 
     private void requireSeller(Long userId, TradeOrder order) {
         if (!order.getSellerId().equals(userId)) {
-            throw BizException.forbidden("只有卖家可以执行该操作");
+            throw BizException.forbidden("Only seller can perform this action");
         }
     }
 
     private void requireParticipant(Long userId, TradeOrder order) {
         if (!order.getSellerId().equals(userId) && !order.getBuyerId().equals(userId)) {
-            throw BizException.forbidden("只能操作自己的订单");
+            throw BizException.forbidden("Only order participants can perform this action");
         }
+    }
+
+    private int safePage(int page) {
+        return Math.max(1, page);
+    }
+
+    private int safeSize(int size) {
+        return Math.min(Math.max(1, size), MAX_PAGE_SIZE);
     }
 
     private String generateOrderNo() {

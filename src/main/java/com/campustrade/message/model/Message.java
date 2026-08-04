@@ -1,9 +1,16 @@
 package com.campustrade.message.model;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+
 import java.time.LocalDateTime;
 
+@TableName("message")
 public class Message {
 
+    @TableId(type = IdType.AUTO)
     private Long id;
     private String eventId;
     private Long receiverId;
@@ -11,7 +18,8 @@ public class Message {
     private String title;
     private String content;
     private Long relatedId;
-    private boolean read;
+    @TableField("is_read")
+    private boolean readFlag;
     private LocalDateTime createdAt;
 
     public Long getId() {
@@ -71,11 +79,19 @@ public class Message {
     }
 
     public boolean isRead() {
-        return read;
+        return readFlag;
     }
 
     public void setRead(boolean read) {
-        this.read = read;
+        this.readFlag = read;
+    }
+
+    public boolean isReadFlag() {
+        return readFlag;
+    }
+
+    public void setReadFlag(boolean readFlag) {
+        this.readFlag = readFlag;
     }
 
     public LocalDateTime getCreatedAt() {

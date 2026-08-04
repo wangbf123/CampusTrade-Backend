@@ -22,12 +22,14 @@ public class InMemoryOrderTimeoutQueue implements OrderTimeoutQueue {
 
     @Override
     public List<Long> dueOrderIds(LocalDateTime now, int limit) {
-        return expireTimes.entrySet().stream()
+        List<Long> dueIds = expireTimes.entrySet().stream()
                 .filter(entry -> !entry.getValue().isAfter(now))
                 .sorted(Comparator.comparing(Map.Entry::getValue))
                 .limit(limit)
                 .map(Map.Entry::getKey)
                 .toList();
+        dueIds.forEach(expireTimes::remove);
+        return dueIds;
     }
 
     @Override

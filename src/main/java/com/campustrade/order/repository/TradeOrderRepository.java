@@ -16,7 +16,11 @@ public interface TradeOrderRepository {
 
     List<TradeOrder> findByBuyerId(Long buyerId);
 
+    List<TradeOrder> findByBuyerId(Long buyerId, int page, int size);
+
     List<TradeOrder> findBySellerId(Long sellerId);
+
+    List<TradeOrder> findBySellerId(Long sellerId, int page, int size);
 
     List<TradeOrder> findExpiredPending(LocalDateTime now);
 

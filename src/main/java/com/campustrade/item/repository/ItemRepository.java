@@ -1,5 +1,6 @@
 package com.campustrade.item.repository;
 
+import com.campustrade.item.dto.ItemQuery;
 import com.campustrade.item.model.Item;
 import com.campustrade.item.model.ItemStatus;
 
@@ -13,6 +14,8 @@ public interface ItemRepository {
     Optional<Item> findById(Long id);
 
     List<Item> findAll();
+
+    List<Item> search(ItemQuery query);
 
     boolean updateStatusIfCurrent(Long itemId, ItemStatus expected, ItemStatus next);
 

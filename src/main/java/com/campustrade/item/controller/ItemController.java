@@ -45,9 +45,11 @@ public class ItemController {
             @RequestParam(required = false) String campus,
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
-            @RequestParam(required = false) ItemStatus status
+            @RequestParam(required = false) ItemStatus status,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
-        return ApiResponse.ok(itemService.list(new ItemQuery(keyword, category, campus, minPrice, maxPrice, status)));
+        return ApiResponse.ok(itemService.list(new ItemQuery(keyword, category, campus, minPrice, maxPrice, status, page, size)));
     }
 
     @GetMapping("/hot")

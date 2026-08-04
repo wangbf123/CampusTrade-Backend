@@ -1,6 +1,7 @@
 package com.campustrade.notification.repository;
 
 import com.campustrade.notification.model.NotificationOutboxEvent;
+import com.campustrade.notification.model.OutboxStatus;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -13,6 +14,10 @@ public interface NotificationOutboxRepository {
     Optional<NotificationOutboxEvent> findByEventId(String eventId);
 
     List<NotificationOutboxEvent> findPendingDue(LocalDateTime now, int limit);
+
+    long countByStatus(OutboxStatus status);
+
+    long countPendingDue(LocalDateTime now);
 
     boolean markPublished(String eventId);
 

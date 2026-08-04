@@ -3,3 +3,8 @@ target/
 *.iml
 *.log
 .DS_Store
+uploads/
+.env.prod
+.env.prod.smoke.local
+dist/
+backups/

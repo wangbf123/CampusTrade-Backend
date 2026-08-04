@@ -11,6 +11,8 @@ public interface MessageRepository {
 
     List<Message> findByReceiverId(Long receiverId);
 
+    List<Message> findByReceiverId(Long receiverId, int page, int size);
+
     Optional<Message> findById(Long id);
 
     Optional<Message> findByEventId(String eventId);

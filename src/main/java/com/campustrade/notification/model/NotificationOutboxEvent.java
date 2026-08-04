@@ -1,9 +1,15 @@
 package com.campustrade.notification.model;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+
 import java.time.LocalDateTime;
 
+@TableName("notification_outbox")
 public class NotificationOutboxEvent {
 
+    @TableId(type = IdType.AUTO)
     private Long id;
     private String eventId;
     private Long receiverId;

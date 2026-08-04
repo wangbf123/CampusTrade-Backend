@@ -1,4 +1,4 @@
-CREATE TABLE user (
+CREATE TABLE `user` (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   username VARCHAR(32) NOT NULL UNIQUE,
   password_hash VARCHAR(128) NOT NULL,
@@ -30,6 +30,9 @@ CREATE TABLE item (
   updated_at DATETIME NOT NULL,
   INDEX idx_item_status_created (status, created_at),
   INDEX idx_item_category_status (category, status),
+  INDEX idx_item_status_campus_created (status, campus, created_at, id),
+  INDEX idx_item_status_category_campus_created (status, category, campus, created_at, id),
+  INDEX idx_item_status_price_created (status, price, created_at, id),
   INDEX idx_item_seller (seller_id),
   INDEX idx_item_price (price)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -162,6 +165,21 @@ CREATE TABLE admin_operation_log (
   created_at DATETIME NOT NULL,
   INDEX idx_admin_log_admin_time (admin_id, created_at),
   INDEX idx_admin_log_target (target_type, target_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE invite_code (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  code VARCHAR(32) NOT NULL UNIQUE,
+  created_by BIGINT NOT NULL,
+  max_uses INT NOT NULL DEFAULT 1,
+  used_count INT NOT NULL DEFAULT 0,
+  status VARCHAR(20) NOT NULL,
+  expires_at DATETIME,
+  remark VARCHAR(200),
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  INDEX idx_invite_code_status_created (status, created_at),
+  INDEX idx_invite_code_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 并发预约确认的核心 SQL：

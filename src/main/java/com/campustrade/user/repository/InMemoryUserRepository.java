@@ -1,6 +1,7 @@
 package com.campustrade.user.repository;
 
 import com.campustrade.user.model.User;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -10,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Repository
+@Profile("!mysql")
 public class InMemoryUserRepository implements UserRepository {
 
     private final AtomicLong idGenerator = new AtomicLong(1000);

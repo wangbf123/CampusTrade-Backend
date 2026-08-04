@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: campus-trade-backend
+  flyway:
+    enabled: false
+  servlet:
+    multipart:
+      max-file-size: ${APP_MULTIPART_MAX_FILE_SIZE:5MB}
+      max-request-size: ${APP_MULTIPART_MAX_REQUEST_SIZE:20MB}
 
 springdoc:
   swagger-ui:
@@ -22,6 +28,7 @@ app:
     scan-delay: 60000
     batch-size: 50
     queue-key: order:timeout:zset
+    retry-delay-seconds: 60
   outbox:
     publish-delay: 3000
     batch-size: 20
@@ -29,8 +36,41 @@ app:
   rabbitmq:
     notification-exchange: campustrade.notification.exchange
     notification-routing-key: notification.created
-    notification-queue: campustrade.notification.queue
+    notification-queue: campustrade.notification.queue.v2
+    notification-dead-letter-exchange: campustrade.notification.dlx
+    notification-dead-letter-routing-key: notification.dead
+    notification-dead-letter-queue: campustrade.notification.dlq.v2
+    publisher-confirm-timeout-ms: 5000
   idempotency:
     appointment-ttl-seconds: 300
+  storage:
+    type: ${APP_STORAGE_TYPE:local}
+    image-dir: ${APP_STORAGE_IMAGE_DIR:uploads/images}
+    public-base-path: ${APP_STORAGE_PUBLIC_BASE_PATH:/uploads/images}
+    public-base-url: ${APP_STORAGE_PUBLIC_BASE_URL:}
+    max-image-size-bytes: ${APP_STORAGE_MAX_IMAGE_SIZE_BYTES:5242880}
+    s3:
+      endpoint: ${APP_STORAGE_S3_ENDPOINT:http://127.0.0.1:9000}
+      region: ${APP_STORAGE_S3_REGION:us-east-1}
+      bucket: ${APP_STORAGE_S3_BUCKET:campustrade}
+      access-key: ${APP_STORAGE_S3_ACCESS_KEY:}
+      secret-key: ${APP_STORAGE_S3_SECRET_KEY:}
   demo:
     seed-data: true
+  admin:
+    bootstrap:
+      enabled: ${APP_ADMIN_BOOTSTRAP_ENABLED:false}
+      username: ${APP_ADMIN_BOOTSTRAP_USERNAME:}
+      password: ${APP_ADMIN_BOOTSTRAP_PASSWORD:}
+      nickname: ${APP_ADMIN_BOOTSTRAP_NICKNAME:System Admin}
+  registration:
+    invite-code-required: ${APP_REGISTRATION_INVITE_CODE_REQUIRED:false}
+  web:
+    cors:
+      allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}
+  observability:
+    request-id-header: ${APP_OBSERVABILITY_REQUEST_ID_HEADER:X-Request-Id}
+    slow-request-enabled: ${APP_OBSERVABILITY_SLOW_REQUEST_ENABLED:true}
+    slow-request-threshold-ms: ${APP_OBSERVABILITY_SLOW_REQUEST_THRESHOLD_MS:1000}
+  production-readiness:
+    enabled: ${APP_PRODUCTION_READINESS_ENABLED:true}

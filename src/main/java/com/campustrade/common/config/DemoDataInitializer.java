@@ -41,14 +41,30 @@ public class DemoDataInitializer implements CommandLineRunner {
         if (!seedData || userRepository.findByUsername("seller").isPresent()) {
             return;
         }
-        User seller = createUser("seller", "卖家同学", UserRole.USER);
-        createUser("buyer", "买家同学", UserRole.USER);
-        createUser("admin", "管理员", UserRole.ADMIN);
+        User seller = createUser("seller", "Demo Seller", UserRole.USER);
+        createUser("buyer", "Demo Buyer", UserRole.USER);
+        createUser("admin", "Demo Admin", UserRole.ADMIN);
 
-        createItem(seller.getId(), "iPad Air 5 64G", "自用 iPad，屏幕无划痕，适合记笔记和看网课。", "电子产品",
-                new BigDecimal("2599.00"), ConditionLevel.LIKE_NEW, "东校区", "图书馆一楼");
-        createItem(seller.getId(), "数据结构教材 + 习题册", "课程刚结束，书内少量笔记，适合期末复习。", "书籍教材",
-                new BigDecimal("39.90"), ConditionLevel.GOOD, "东校区", "教学楼 A 座");
+        createItem(
+                seller.getId(),
+                "iPad Air 5 64G",
+                "Personal iPad in good condition, suitable for notes and online classes.",
+                "Electronics",
+                new BigDecimal("2599.00"),
+                ConditionLevel.LIKE_NEW,
+                "East Campus",
+                "Library Gate"
+        );
+        createItem(
+                seller.getId(),
+                "Data Structure Textbook",
+                "Course textbook with light notes, suitable for final exam review.",
+                "Books",
+                new BigDecimal("39.90"),
+                ConditionLevel.GOOD,
+                "East Campus",
+                "Teaching Building A"
+        );
     }
 
     private User createUser(String username, String nickname, UserRole role) {
@@ -57,7 +73,7 @@ public class DemoDataInitializer implements CommandLineRunner {
         user.setPasswordHash(passwordHasher.hash("123456"));
         user.setNickname(nickname);
         user.setPhone("1880000" + username.length() + Math.abs(username.hashCode() % 1000));
-        user.setCampus("东校区");
+        user.setCampus("East Campus");
         user.setRole(role);
         user.setStatus(UserStatus.NORMAL);
         user.setCreditScore(100);

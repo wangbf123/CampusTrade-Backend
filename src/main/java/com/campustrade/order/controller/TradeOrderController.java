@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -69,14 +70,20 @@ public class TradeOrderController {
     }
 
     @GetMapping("/orders/my-buy")
-    public ApiResponse<List<OrderResponse>> myBuyOrders() {
+    public ApiResponse<List<OrderResponse>> myBuyOrders(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
         AuthenticatedUser user = CurrentUserContext.require();
-        return ApiResponse.ok(tradeOrderService.myBuyOrders(user.id()));
+        return ApiResponse.ok(tradeOrderService.myBuyOrders(user.id(), page, size));
     }
 
     @GetMapping("/orders/my-sell")
-    public ApiResponse<List<OrderResponse>> mySellOrders() {
+    public ApiResponse<List<OrderResponse>> mySellOrders(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
         AuthenticatedUser user = CurrentUserContext.require();
-        return ApiResponse.ok(tradeOrderService.mySellOrders(user.id()));
+        return ApiResponse.ok(tradeOrderService.mySellOrders(user.id(), page, size));
     }
 }

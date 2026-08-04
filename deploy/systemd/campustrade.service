@@ -1,0 +1,17 @@
+[Unit]
+Description=CampusTrade Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=campus
+WorkingDirectory=/opt/campustrade
+EnvironmentFile=/opt/campustrade/.env.prod
+ExecStart=/bin/sh -lc 'exec /usr/bin/java $JAVA_OPTS -jar /opt/campustrade/campus-trade-backend-0.1.0-SNAPSHOT.jar --spring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod,mysql,redis,rabbitmq}'
+SuccessExitStatus=143
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

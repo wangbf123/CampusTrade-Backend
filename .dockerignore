@@ -1,0 +1,7 @@
+.git
+.idea
+target
+docs/pressure-results
+node_modules
+*.log
+*.iml

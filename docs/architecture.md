@@ -13,8 +13,8 @@ flowchart LR
     Auth --> Order["TradeOrderService\n预约/确认/取消/完成"]
     Auth --> Message["MessageService\n站内消息"]
 
-    Item --> ItemRepo["ItemRepository\n默认内存 / MyBatis-Plus 预留"]
-    Order --> OrderRepo["TradeOrderRepository\n默认内存 / MyBatis-Plus 预留"]
+    Item --> ItemRepo["ItemRepository\n默认内存 / MyBatis-Plus Mapper"]
+    Order --> OrderRepo["TradeOrderRepository\n默认内存 / MyBatis-Plus Mapper"]
     Message --> MsgRepo["MessageRepository\n消息幂等存储"]
 
     Item --> DetailCache["ItemDetailCache\n商品详情缓存"]
@@ -38,10 +38,10 @@ flowchart LR
     RabbitListener --> Consumer
     Consumer --> Message
 
-    MySQL[("MySQL\nschema.sql 设计")] -. mysql profile 预留 .-> ItemRepo
-    MySQL -. mysql profile 预留 .-> OrderRepo
-    MySQL -. mysql profile 预留 .-> MsgRepo
-    MySQL -. mysql profile 预留 .-> OutboxRepo
+    MySQL[("MySQL\nmysql profile")] -. MyBatis-Plus .-> ItemRepo
+    MySQL -. MyBatis-Plus .-> OrderRepo
+    MySQL -. MyBatis-Plus .-> MsgRepo
+    MySQL -. MyBatis-Plus .-> OutboxRepo
 ```
 
 ## 核心业务流程
@@ -161,12 +161,6 @@ flowchart TD
     Idem --> Service
 ```
 
-## 面试讲解顺序
+## 架构阅读路径
 
-推荐按这个顺序讲，逻辑最顺：
-
-1. 先讲业务：校园二手交易不是完整电商，核心是线下预约履约。
-2. 再讲订单状态机：用状态机限制非法流转，用条件更新解决并发修改。
-3. 接着讲 Redis：商品详情缓存、热门商品榜单、超时订单队列。
-4. 再讲 MQ：Outbox 解耦订单状态变更和通知发送，eventId 做消费幂等。
-5. 最后讲风控：限流和幂等键防刷接口、防重复预约。
+建议先从业务闭环和订单状态机开始，再阅读 Redis 缓存/超时队列以及 RabbitMQ + Outbox 链路，最后查看限流、幂等和生产可观测性。这样的顺序可以先建立领域模型，再理解基础设施如何围绕一致性、可靠性和吞吐量提供支撑。

@@ -10,6 +10,8 @@ import java.util.List;
 @Service
 public class MessageService {
 
+    private static final int MAX_PAGE_SIZE = 100;
+
     private final MessageRepository messageRepository;
 
     public MessageService(MessageRepository messageRepository) {
@@ -35,17 +37,25 @@ public class MessageService {
         messageRepository.save(message);
     }
 
-    public List<Message> list(Long receiverId) {
-        return messageRepository.findByReceiverId(receiverId);
+    public List<Message> list(Long receiverId, int page, int size) {
+        return messageRepository.findByReceiverId(receiverId, safePage(page), safeSize(size));
     }
 
     public Message markRead(Long userId, Long messageId) {
         Message message = messageRepository.findById(messageId)
-                .orElseThrow(() -> BizException.notFound("消息不存在"));
+                .orElseThrow(() -> BizException.notFound("Message does not exist"));
         if (!message.getReceiverId().equals(userId)) {
-            throw BizException.forbidden("只能读取自己的消息");
+            throw BizException.forbidden("Only your own messages can be read");
         }
         message.setRead(true);
         return messageRepository.save(message);
+    }
+
+    private int safePage(int page) {
+        return Math.max(1, page);
+    }
+
+    private int safeSize(int size) {
+        return Math.min(Math.max(1, size), MAX_PAGE_SIZE);
     }
 }

@@ -2,6 +2,7 @@ package com.campustrade.notification.repository;
 
 import com.campustrade.notification.model.NotificationOutboxEvent;
 import com.campustrade.notification.model.OutboxStatus;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -13,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Repository
+@Profile("!mysql")
 public class InMemoryNotificationOutboxRepository implements NotificationOutboxRepository {
 
     private final AtomicLong idGenerator = new AtomicLong(5000);
@@ -43,6 +45,21 @@ public class InMemoryNotificationOutboxRepository implements NotificationOutboxR
                 .sorted(Comparator.comparing(NotificationOutboxEvent::getCreatedAt))
                 .limit(limit)
                 .toList();
+    }
+
+    @Override
+    public long countByStatus(OutboxStatus status) {
+        return events.values().stream()
+                .filter(event -> event.getStatus() == status)
+                .count();
+    }
+
+    @Override
+    public long countPendingDue(LocalDateTime now) {
+        return events.values().stream()
+                .filter(event -> event.getStatus() == OutboxStatus.PENDING)
+                .filter(event -> event.getNextRetryAt() == null || !event.getNextRetryAt().isAfter(now))
+                .count();
     }
 
     @Override

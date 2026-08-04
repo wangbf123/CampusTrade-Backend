@@ -1,0 +1,108 @@
+{
+  "startedAt": "2026-05-28T04:03:36.237Z",
+  "baseUrl": "http://localhost:8080",
+  "profile": "mysql,redis,rabbitmq",
+  "warmupRequests": 50,
+  "scenarioRequests": 300,
+  "concurrency": 30,
+  "appointmentRequests": 12,
+  "itemId": 1,
+  "scenarios": [
+    {
+      "name": "item_detail_cached",
+      "totalRequests": 300,
+      "concurrency": 30,
+      "elapsedMs": 2135.41,
+      "throughput": 140.49,
+      "success": 300,
+      "failures": 0,
+      "status": {
+        "200": 300
+      },
+      "avgMs": 202.37,
+      "minMs": 36.22,
+      "p50Ms": 200.6,
+      "p90Ms": 273.28,
+      "p95Ms": 289.74,
+      "p99Ms": 297.93,
+      "maxMs": 410.82
+    },
+    {
+      "name": "hot_items",
+      "totalRequests": 300,
+      "concurrency": 30,
+      "elapsedMs": 994.33,
+      "throughput": 301.71,
+      "success": 300,
+      "failures": 0,
+      "status": {
+        "200": 300
+      },
+      "avgMs": 96.4,
+      "minMs": 27.71,
+      "p50Ms": 84.36,
+      "p90Ms": 153.26,
+      "p95Ms": 178.74,
+      "p99Ms": 214.99,
+      "maxMs": 231.51
+    },
+    {
+      "name": "item_list_search",
+      "totalRequests": 300,
+      "concurrency": 30,
+      "elapsedMs": 552.11,
+      "throughput": 543.37,
+      "success": 300,
+      "failures": 0,
+      "status": {
+        "200": 300
+      },
+      "avgMs": 52.48,
+      "minMs": 15.76,
+      "p50Ms": 49.78,
+      "p90Ms": 77.31,
+      "p95Ms": 88.1,
+      "p99Ms": 104.17,
+      "maxMs": 126.98
+    },
+    {
+      "name": "appointment_create_with_idempotency",
+      "totalRequests": 12,
+      "concurrency": 6,
+      "elapsedMs": 189.5,
+      "throughput": 63.32,
+      "success": 10,
+      "failures": 2,
+      "status": {
+        "200": 10,
+        "429": 2
+      },
+      "avgMs": 89.23,
+      "minMs": 19.36,
+      "p50Ms": 46.77,
+      "p90Ms": 144.1,
+      "p95Ms": 144.15,
+      "p99Ms": 144.15,
+      "maxMs": 144.15
+    },
+    {
+      "name": "appointment_rate_limit_probe",
+      "totalRequests": 15,
+      "concurrency": 5,
+      "elapsedMs": 23.12,
+      "throughput": 648.9,
+      "success": 0,
+      "failures": 15,
+      "status": {
+        "429": 15
+      },
+      "avgMs": 6.81,
+      "minMs": 4.39,
+      "p50Ms": 6.78,
+      "p90Ms": 8.21,
+      "p95Ms": 9.91,
+      "p99Ms": 9.91,
+      "maxMs": 9.91
+    }
+  ]
+}

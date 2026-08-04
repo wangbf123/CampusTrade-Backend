@@ -9,7 +9,11 @@ public class RabbitNotificationProperties {
 
     private String notificationExchange = "campustrade.notification.exchange";
     private String notificationRoutingKey = "notification.created";
-    private String notificationQueue = "campustrade.notification.queue";
+    private String notificationQueue = "campustrade.notification.queue.v2";
+    private String notificationDeadLetterExchange = "campustrade.notification.dlx";
+    private String notificationDeadLetterRoutingKey = "notification.dead";
+    private String notificationDeadLetterQueue = "campustrade.notification.dlq.v2";
+    private long publisherConfirmTimeoutMs = 5000;
 
     public String getNotificationExchange() {
         return notificationExchange;
@@ -33,5 +37,37 @@ public class RabbitNotificationProperties {
 
     public void setNotificationQueue(String notificationQueue) {
         this.notificationQueue = notificationQueue;
+    }
+
+    public String getNotificationDeadLetterExchange() {
+        return notificationDeadLetterExchange;
+    }
+
+    public void setNotificationDeadLetterExchange(String notificationDeadLetterExchange) {
+        this.notificationDeadLetterExchange = notificationDeadLetterExchange;
+    }
+
+    public String getNotificationDeadLetterRoutingKey() {
+        return notificationDeadLetterRoutingKey;
+    }
+
+    public void setNotificationDeadLetterRoutingKey(String notificationDeadLetterRoutingKey) {
+        this.notificationDeadLetterRoutingKey = notificationDeadLetterRoutingKey;
+    }
+
+    public String getNotificationDeadLetterQueue() {
+        return notificationDeadLetterQueue;
+    }
+
+    public void setNotificationDeadLetterQueue(String notificationDeadLetterQueue) {
+        this.notificationDeadLetterQueue = notificationDeadLetterQueue;
+    }
+
+    public long getPublisherConfirmTimeoutMs() {
+        return publisherConfirmTimeoutMs;
+    }
+
+    public void setPublisherConfirmTimeoutMs(long publisherConfirmTimeoutMs) {
+        this.publisherConfirmTimeoutMs = publisherConfirmTimeoutMs;
     }
 }

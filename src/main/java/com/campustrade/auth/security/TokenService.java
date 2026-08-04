@@ -10,18 +10,17 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class TokenService {
 
     private final SecureRandom secureRandom = new SecureRandom();
-    private final Map<String, Session> sessions = new ConcurrentHashMap<>();
+    private final TokenStore tokenStore;
     private final Duration tokenTtl;
 
-    public TokenService(@Value("${app.auth.token-ttl-minutes:720}") long tokenTtlMinutes) {
+    public TokenService(TokenStore tokenStore, @Value("${app.auth.token-ttl-minutes:720}") long tokenTtlMinutes) {
+        this.tokenStore = tokenStore;
         this.tokenTtl = Duration.ofMinutes(tokenTtlMinutes);
     }
 
@@ -29,10 +28,10 @@ public class TokenService {
         byte[] random = new byte[32];
         secureRandom.nextBytes(random);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(random);
-        sessions.put(token, new Session(
+        tokenStore.save(token, new TokenSession(
                 new AuthenticatedUser(user.getId(), user.getUsername(), user.getRole()),
                 Instant.now().plus(tokenTtl)
-        ));
+        ), tokenTtl);
         return token;
     }
 
@@ -40,12 +39,13 @@ public class TokenService {
         if (token == null || token.isBlank()) {
             return Optional.empty();
         }
-        Session session = sessions.get(token);
-        if (session == null) {
+        Optional<TokenSession> sessionOptional = tokenStore.find(token);
+        if (sessionOptional.isEmpty()) {
             return Optional.empty();
         }
-        if (session.expiresAt().isBefore(Instant.now())) {
-            sessions.remove(token);
+        TokenSession session = sessionOptional.get();
+        if (!session.expiresAt().isAfter(Instant.now())) {
+            tokenStore.delete(token);
             return Optional.empty();
         }
         return Optional.of(session.user());
@@ -55,9 +55,6 @@ public class TokenService {
         if (token == null || token.isBlank()) {
             throw BizException.badRequest("token 不能为空");
         }
-        sessions.remove(token);
-    }
-
-    private record Session(AuthenticatedUser user, Instant expiresAt) {
+        tokenStore.delete(token);
     }
 }
