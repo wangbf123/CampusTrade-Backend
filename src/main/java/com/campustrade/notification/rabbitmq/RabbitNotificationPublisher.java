@@ -4,6 +4,8 @@ import com.campustrade.notification.model.NotificationEventPayload;
 import com.campustrade.notification.model.NotificationOutboxEvent;
 import com.campustrade.notification.service.NotificationPublisher;
 import org.springframework.amqp.core.ReturnedMessage;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.context.annotation.Profile;
@@ -37,6 +39,19 @@ public class RabbitNotificationPublisher implements NotificationPublisher {
                 correlationData
         );
 
+        awaitConfirmation(correlationData, event.getEventId());
+    }
+
+    /** ACK the original only after this persistent retry message is confirmed and routed. */
+    public void publishRetry(NotificationEventPayload payload, Message original, int attempt) {
+        CorrelationData correlation = new CorrelationData(payload.eventId() + ":retry:" + attempt);
+        Message retry = MessageBuilder.fromClonedMessage(original)
+                .setHeader("notification-attempt", attempt).build();
+        rabbitTemplate.send(properties.getNotificationRetryExchange(), properties.getNotificationRetryRoutingKey(), retry, correlation);
+        awaitConfirmation(correlation, payload.eventId());
+    }
+
+    private void awaitConfirmation(CorrelationData correlationData, String eventId) {
         try {
             CorrelationData.Confirm confirm = correlationData.getFuture()
                     .get(properties.getPublisherConfirmTimeoutMs(), TimeUnit.MILLISECONDS);
@@ -53,7 +68,7 @@ public class RabbitNotificationPublisher implements NotificationPublisher {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while waiting RabbitMQ confirm", exception);
         } catch (Exception exception) {
-            throw new IllegalStateException("RabbitMQ publish failed for event " + event.getEventId(), exception);
+            throw new IllegalStateException("RabbitMQ publish failed for event " + eventId, exception);
         }
     }
 }

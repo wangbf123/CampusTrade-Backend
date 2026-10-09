@@ -1,6 +1,7 @@
 package com.campustrade.risk.idempotency;
 
 import com.campustrade.common.exception.BizException;
+import com.campustrade.order.dto.CreateAppointmentRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +33,24 @@ public class IdempotencyService {
         if (!acquired) {
             throw BizException.conflict("检测到重复提交，请稍后再试");
         }
+    }
+
+    public String normalizeExplicitKey(String key) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        String normalized = key.trim();
+        if (normalized.length() > 128 || normalized.chars().anyMatch(Character::isISOControl)) {
+            throw BizException.badRequest("幂等键最多128个字符且不能包含控制字符");
+        }
+        return normalized;
+    }
+
+    public String appointmentRequestHash(Long itemId, CreateAppointmentRequest request) {
+        // Length-prefix the nullable note so different payloads cannot share a delimiter encoding.
+        String note = request.note();
+        return sha256(itemId + "\n" + request.expectedTime() + "\n"
+                + (note == null ? "-1:" : note.length() + ":" + note));
     }
 
     private String sha256(String value) {

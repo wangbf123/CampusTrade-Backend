@@ -27,20 +27,31 @@ app:
     hours: 24
     scan-delay: 60000
     batch-size: 50
-    queue-key: order:timeout:zset
+    queue-key: "{order-timeout}:pending"
     retry-delay-seconds: 60
+    lease-seconds: 120
+    recovery-delay: 10000
+    recovery-batch-size: 500
+    lookahead-seconds: 60
   outbox:
     publish-delay: 3000
     batch-size: 20
     max-retry: 5
+    lease-seconds: ${APP_OUTBOX_LEASE_SECONDS:30}
+    dlq-observe-delay: 30000
   rabbitmq:
     notification-exchange: campustrade.notification.exchange
     notification-routing-key: notification.created
-    notification-queue: campustrade.notification.queue.v2
+    notification-queue: campustrade.notification.queue.v3
     notification-dead-letter-exchange: campustrade.notification.dlx
     notification-dead-letter-routing-key: notification.dead
-    notification-dead-letter-queue: campustrade.notification.dlq.v2
+    notification-dead-letter-queue: campustrade.notification.dlq.v3
     publisher-confirm-timeout-ms: 5000
+    notification-retry-exchange: campustrade.notification.retry.exchange
+    notification-retry-routing-key: notification.retry
+    notification-retry-queue: campustrade.notification.retry.queue.v3
+    consumer-max-retry: 3
+    consumer-retry-delay-ms: 5000
   idempotency:
     appointment-ttl-seconds: 300
   storage:

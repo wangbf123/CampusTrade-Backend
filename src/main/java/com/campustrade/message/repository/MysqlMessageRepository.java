@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.campustrade.message.mapper.MessageMapper;
 import com.campustrade.message.model.Message;
 import org.springframework.context.annotation.Profile;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -23,22 +22,16 @@ public class MysqlMessageRepository implements MessageRepository {
 
     @Override
     public Message save(Message message) {
-        if (message.getEventId() != null) {
-            Optional<Message> existing = findByEventId(message.getEventId());
-            if (existing.isPresent()) {
-                return existing.get();
-            }
-        }
-
         if (message.getCreatedAt() == null) {
             message.setCreatedAt(LocalDateTime.now());
         }
-        try {
-            messageMapper.insert(message);
-            return message;
-        } catch (DuplicateKeyException exception) {
-            return findByEventId(message.getEventId()).orElseThrow(() -> exception);
+        if (message.getEventId() != null) {
+            messageMapper.insertIdempotently(message);
+            return Optional.ofNullable(messageMapper.selectCurrentByEventId(message.getEventId()))
+                    .orElseThrow(() -> new IllegalStateException("Idempotent notification insert returned no row"));
         }
+        messageMapper.insert(message);
+        return message;
     }
 
     @Override

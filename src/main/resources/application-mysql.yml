@@ -1,10 +1,11 @@
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:33306}/${MYSQL_DATABASE:campus_trade}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:33306}/${MYSQL_DATABASE:campus_trade}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: ${MYSQL_USERNAME:campus}
     password: ${MYSQL_PASSWORD:campus123}
     hikari:
+      connection-init-sql: SET time_zone = '+00:00'
       maximum-pool-size: ${MYSQL_MAX_POOL_SIZE:10}
       minimum-idle: ${MYSQL_MIN_IDLE:2}
       connection-timeout: ${MYSQL_CONNECTION_TIMEOUT_MS:3000}

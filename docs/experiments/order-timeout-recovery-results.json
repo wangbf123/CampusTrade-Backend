@@ -1,0 +1,160 @@
+{
+  "recorded_at": "2026-10-09T16:14:35+08:00",
+  "base_commit": "d53792595f3fe918b4b5f02ba5eac22175a0a004",
+  "working_tree_changes": true,
+  "source_sha256": {
+    "src/main/java/com/campustrade/observability/OrderTimeoutMetrics.java": "4441d3c5d090e3c7cd06e87152f7d0345bc41371a985d8fe3856d37275e82a97",
+    "src/main/java/com/campustrade/order/service/TradeOrderService.java": "8571d2cad79b7729c3a04f37532ae0cd9a0f564e3d68847f34be37ee1a8b5c7b",
+    "src/main/java/com/campustrade/order/timeout/InMemoryOrderTimeoutQueue.java": "a08466ce0ba9e11da774942f33f103e690f0d8e45f1f98eea9145af05eb643ed",
+    "src/main/java/com/campustrade/order/timeout/OrderTimeoutClaim.java": "9ba85c9bd181b0bcdaff727677d18fa48b7076dccb4017981ac234283e502cfa",
+    "src/main/java/com/campustrade/order/timeout/OrderTimeoutQueue.java": "3dd1558d7eef994edb763b16a4b0b635be948c5bf33b767df15ca72d2b4a732e",
+    "src/main/java/com/campustrade/order/timeout/OrderTimeoutRecoveryService.java": "318ac33ef882c96da68e387213b21e3c6c6046d14173d63d2edc290209eb511e",
+    "src/main/java/com/campustrade/order/timeout/RedisOrderTimeoutQueue.java": "4c3dc836e153bff4acc335d973b8d90bec47a0c98dc11f6591d8def69c87328f",
+    "src/main/java/com/campustrade/order/timeout/TimeoutQueueSnapshot.java": "cd1db9ef64e8202b4a00069f3ac633b76ed1a6aa69bfe15c8108c4a7d669f869"
+  },
+  "runtime": {
+    "java": "21.0.12.1",
+    "maven": "3.9.11",
+    "spring_boot": "3.3.7",
+    "mysql": "8.4.11",
+    "redis": "7.4.11",
+    "instance_count": 1,
+    "cgroup_cpu_quota_cores": 4,
+    "cgroup_memory_limit_gib": 32
+  },
+  "dependencies": "Actual local MySQL 3307 and Redis 6379; random isolated schema and key namespace",
+  "method": "Production repositories, TransactionTemplate, Lua scripts; two child JVMs terminated with SIGKILL at explicit protocol markers",
+  "suites": [
+    {
+      "suite": "com.campustrade.order.timeout.InMemoryOrderTimeoutQueueTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suite_elapsed_seconds": 0.012,
+      "cases": [
+        {
+          "name": "shouldRemovePendingAndProcessingWhenUserHandlesOrder",
+          "elapsed_seconds": 0.001
+        },
+        {
+          "name": "shouldNotOverwriteClaimsOrRetryBackoffDuringDatabaseCompensation",
+          "elapsed_seconds": 0.0
+        },
+        {
+          "name": "shouldHaveAtMostOneActiveClaimAcrossConcurrentWorkers",
+          "elapsed_seconds": 0.002
+        },
+        {
+          "name": "shouldClaimOnlyDueOrdersByExpireTimeAndRetainProcessingRecords",
+          "elapsed_seconds": 0.002
+        },
+        {
+          "name": "shouldBoundRecoveryAndRejectInvalidLease",
+          "elapsed_seconds": 0.001
+        },
+        {
+          "name": "shouldRecoverWorkerCrashAndFenceStaleAckAndRetry",
+          "elapsed_seconds": 0.001
+        }
+      ]
+    },
+    {
+      "suite": "com.campustrade.order.timeout.OrderTimeoutRecoveryServiceTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suite_elapsed_seconds": 0.224,
+      "cases": [
+        {
+          "name": "shouldNotStarveLaterOrdersWhenEarlierTasksRemainInProcessing",
+          "elapsed_seconds": 0.153
+        },
+        {
+          "name": "shouldRebuildLostQueueFromDatabaseAndIncludeUpcomingDeadlines",
+          "elapsed_seconds": 0.032
+        },
+        {
+          "name": "shouldRecoverExpiredClaimWithoutDuplicatingTheCompensatedTask",
+          "elapsed_seconds": 0.002
+        }
+      ]
+    },
+    {
+      "suite": "com.campustrade.order.timeout.RedisOrderTimeoutQueueIntegrationTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suite_elapsed_seconds": 0.628,
+      "cases": [
+        {
+          "name": "boundsRecoveryAndReportsOldestDueAge",
+          "elapsed_seconds": 0.127
+        },
+        {
+          "name": "concurrentWorkersNeverOwnTheSameActiveClaim",
+          "elapsed_seconds": 0.155
+        },
+        {
+          "name": "databaseCompensationDoesNotShortCircuitRetryBackoff",
+          "elapsed_seconds": 0.111
+        },
+        {
+          "name": "utcScoresRemainStableAcrossHostTimezones",
+          "elapsed_seconds": 0.111
+        },
+        {
+          "name": "crashLeaseRecoveryAndStaleTokenFencing",
+          "elapsed_seconds": 0.118
+        }
+      ]
+    },
+    {
+      "suite": "com.campustrade.order.timeout.MysqlRedisTimeoutRecoveryIntegrationTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suite_elapsed_seconds": 11.599,
+      "cases": [
+        {
+          "name": "failedAfterCommitEnqueueIsRecoveredByDatabaseScan",
+          "elapsed_seconds": 2.659
+        },
+        {
+          "name": "sigkillAfterClaimRecoversPendingOrderAndPublishesExactlyTwoEvents",
+          "elapsed_seconds": 3.325
+        },
+        {
+          "name": "redisUnavailabilityFallsBackToBoundedDatabaseExpiration",
+          "elapsed_seconds": 0.077
+        },
+        {
+          "name": "prematureQueueTaskDoesNotExpireFutureOrderAndIsRescheduledToDatabaseDeadline",
+          "elapsed_seconds": 0.02
+        },
+        {
+          "name": "completeRedisQueueLossIsRebuiltFromMysql",
+          "elapsed_seconds": 0.023
+        },
+        {
+          "name": "sigkillAfterDatabaseCommitBeforeAckDoesNotDuplicateOutboxEvents",
+          "elapsed_seconds": 3.541
+        }
+      ]
+    }
+  ],
+  "total_tests": 20,
+  "total_failures": 0,
+  "total_errors": 0,
+  "total_skipped": 0,
+  "limits": [
+    "Correctness and recovery validation, not a load benchmark",
+    "Configured 2-second test leases differ from 120-second production default",
+    "Suite/case duration includes fixture and JVM startup, not expiration latency SLO",
+    "MySQL and Redis run as single local instances; does not establish HA",
+    "Redis outage fallback is injected at the queue API; the shared Redis server is not stopped"
+  ]
+}

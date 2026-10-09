@@ -105,30 +105,26 @@ public class ItemService {
         if (!item.getSellerId().equals(sellerId)) {
             throw BizException.forbidden("只能下架自己的商品");
         }
-        if (item.getStatus() == ItemStatus.SOLD) {
-            throw BizException.conflict("已售出的商品不能下架");
+        if (!itemRepository.updateStatusIfCurrent(itemId, ItemStatus.ON_SALE, ItemStatus.OFF_SHELF)) {
+            throw BizException.conflict("只有在售商品可以下架，请先处理关联订单");
         }
-        item.setStatus(ItemStatus.OFF_SHELF);
-        itemRepository.save(item);
         evictItemCache(itemId);
-        return ItemResponse.from(item);
+        return ItemResponse.from(requireItem(itemId));
     }
 
     @Transactional
     public ItemResponse forceOffShelfByAdmin(Long itemId) {
         Item item = requireItem(itemId);
-        if (item.getStatus() == ItemStatus.SOLD) {
-            throw BizException.conflict("已售出的商品不能下架");
+        if (!itemRepository.updateStatusIfCurrent(itemId, ItemStatus.ON_SALE, ItemStatus.OFF_SHELF)) {
+            throw BizException.conflict("只有在售商品可以下架，请先处理关联订单");
         }
-        item.setStatus(ItemStatus.OFF_SHELF);
-        itemRepository.save(item);
         evictItemCache(itemId);
-        return ItemResponse.from(item);
+        return ItemResponse.from(requireItem(itemId));
     }
 
     @Transactional
-    public boolean reserveIfOnSale(Long itemId) {
-        boolean updated = itemRepository.updateStatusIfCurrent(itemId, ItemStatus.ON_SALE, ItemStatus.RESERVED);
+    public boolean reserveIfOnSale(Long itemId, Long orderId) {
+        boolean updated = itemRepository.reserveIfOnSale(itemId, orderId);
         if (updated) {
             evictItemCache(itemId);
         }
@@ -136,16 +132,16 @@ public class ItemService {
     }
 
     @Transactional
-    public void restoreOnSaleIfReserved(Long itemId) {
-        boolean updated = itemRepository.updateStatusIfCurrent(itemId, ItemStatus.RESERVED, ItemStatus.ON_SALE);
-        if (updated) {
-            evictItemCache(itemId);
+    public void restoreOnSaleIfReserved(Long itemId, Long orderId) {
+        if (!itemRepository.releaseReservation(itemId, orderId)) {
+            throw BizException.conflict("商品不再由当前订单占用，无法释放");
         }
+        evictItemCache(itemId);
     }
 
     @Transactional
-    public void markSoldIfReserved(Long itemId) {
-        boolean updated = itemRepository.updateStatusIfCurrent(itemId, ItemStatus.RESERVED, ItemStatus.SOLD);
+    public void markSoldIfReserved(Long itemId, Long orderId) {
+        boolean updated = itemRepository.sellReservation(itemId, orderId);
         if (!updated) {
             throw BizException.conflict("商品状态已变化，无法完成交易");
         }

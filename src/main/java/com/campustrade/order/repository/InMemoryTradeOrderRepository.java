@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +24,7 @@ public class InMemoryTradeOrderRepository implements TradeOrderRepository {
 
     @Override
     public synchronized TradeOrder save(TradeOrder order) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         if (order.getId() == null) {
             order.setId(idGenerator.incrementAndGet());
             order.setCreatedAt(now);
@@ -80,6 +81,42 @@ public class InMemoryTradeOrderRepository implements TradeOrderRepository {
     }
 
     @Override
+    public List<TradeOrder> findExpiredPending(LocalDateTime now, int limit) {
+        return findPendingExpiringBefore(now, null, null, limit);
+    }
+
+    @Override
+    public List<TradeOrder> findPendingExpiringBefore(LocalDateTime horizon, LocalDateTime afterExpireAt,
+                                                     Long afterId, int limit) {
+        return orders.values().stream()
+                .filter(order -> order.getStatus() == OrderStatus.PENDING)
+                .filter(order -> order.getExpireAt() != null && !order.getExpireAt().isAfter(horizon))
+                .filter(order -> afterExpireAt == null || order.getExpireAt().isAfter(afterExpireAt)
+                        || (order.getExpireAt().equals(afterExpireAt) && order.getId() > afterId))
+                .sorted(Comparator.comparing(TradeOrder::getExpireAt).thenComparing(TradeOrder::getId))
+                .limit(Math.max(1, limit))
+                .toList();
+    }
+
+    @Override
+    public synchronized boolean confirmIfPendingAndNotExpired(Long orderId, Consumer<TradeOrder> mutation) {
+        TradeOrder order = orders.get(orderId);
+        if (order == null || order.getExpireAt() == null || !order.getExpireAt().isAfter(LocalDateTime.now(ZoneOffset.UTC))) {
+            return false;
+        }
+        return updateStatusIfCurrent(orderId, OrderStatus.PENDING, OrderStatus.CONFIRMED, mutation);
+    }
+
+    @Override
+    public synchronized boolean expireIfPendingAndDue(Long orderId, Consumer<TradeOrder> mutation) {
+        TradeOrder order = orders.get(orderId);
+        if (order == null || order.getExpireAt() == null || order.getExpireAt().isAfter(LocalDateTime.now(ZoneOffset.UTC))) {
+            return false;
+        }
+        return updateStatusIfCurrent(orderId, OrderStatus.PENDING, OrderStatus.EXPIRED, mutation);
+    }
+
+    @Override
     public synchronized boolean updateStatusIfCurrent(
             Long orderId,
             OrderStatus expected,
@@ -95,7 +132,7 @@ public class InMemoryTradeOrderRepository implements TradeOrderRepository {
             mutation.accept(order);
         }
         order.setVersion(order.getVersion() + 1);
-        order.setUpdatedAt(LocalDateTime.now());
+        order.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
         return true;
     }
 

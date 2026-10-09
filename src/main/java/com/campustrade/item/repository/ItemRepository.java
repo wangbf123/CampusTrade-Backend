@@ -19,5 +19,11 @@ public interface ItemRepository {
 
     boolean updateStatusIfCurrent(Long itemId, ItemStatus expected, ItemStatus next);
 
+    boolean reserveIfOnSale(Long itemId, Long orderId);
+
+    boolean releaseReservation(Long itemId, Long orderId);
+
+    boolean sellReservation(Long itemId, Long orderId);
+
     void increaseViewCount(Long itemId);
 }

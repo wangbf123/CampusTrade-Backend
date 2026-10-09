@@ -21,12 +21,22 @@ public class NotificationOutboxEvent {
     private int retryCount;
     private LocalDateTime nextRetryAt;
     private String lastError;
+    private String claimToken;
+    private LocalDateTime leaseUntil;
+    private int replayCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
     public Long getId() {
         return id;
     }
+
+    public String getClaimToken() { return claimToken; }
+    public void setClaimToken(String claimToken) { this.claimToken = claimToken; }
+    public LocalDateTime getLeaseUntil() { return leaseUntil; }
+    public void setLeaseUntil(LocalDateTime leaseUntil) { this.leaseUntil = leaseUntil; }
+    public int getReplayCount() { return replayCount; }
+    public void setReplayCount(int replayCount) { this.replayCount = replayCount; }
 
     public void setId(Long id) {
         this.id = id;

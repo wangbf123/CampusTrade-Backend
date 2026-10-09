@@ -13,6 +13,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +35,7 @@ public class MysqlItemRepository implements ItemRepository {
     @Override
     @Transactional
     public Item save(Item item) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         if (item.getId() == null) {
             item.setCreatedAt(now);
             item.setUpdatedAt(now);
@@ -90,7 +91,7 @@ public class MysqlItemRepository implements ItemRepository {
                 .eq(Item::getId, itemId)
                 .eq(Item::getStatus, expected)
                 .set(Item::getStatus, next)
-                .set(Item::getUpdatedAt, LocalDateTime.now())
+                .set(Item::getUpdatedAt, LocalDateTime.now(ZoneOffset.UTC))
                 .setSql("version = version + 1"));
         return rows == 1;
     }
@@ -99,8 +100,47 @@ public class MysqlItemRepository implements ItemRepository {
     public void increaseViewCount(Long itemId) {
         itemMapper.update(null, new LambdaUpdateWrapper<Item>()
                 .eq(Item::getId, itemId)
-                .set(Item::getUpdatedAt, LocalDateTime.now())
+                .set(Item::getUpdatedAt, LocalDateTime.now(ZoneOffset.UTC))
                 .setSql("view_count = view_count + 1"));
+    }
+
+    @Override
+    public boolean reserveIfOnSale(Long itemId, Long orderId) {
+        if (orderId == null) {
+            return false;
+        }
+        return itemMapper.update(null, new LambdaUpdateWrapper<Item>()
+                .eq(Item::getId, itemId)
+                .eq(Item::getStatus, ItemStatus.ON_SALE)
+                .isNull(Item::getReservedOrderId)
+                .set(Item::getStatus, ItemStatus.RESERVED)
+                .set(Item::getReservedOrderId, orderId)
+                .set(Item::getUpdatedAt, LocalDateTime.now(ZoneOffset.UTC))
+                .setSql("version = version + 1")) == 1;
+    }
+
+    @Override
+    public boolean releaseReservation(Long itemId, Long orderId) {
+        return transitionReservation(itemId, orderId, ItemStatus.ON_SALE);
+    }
+
+    @Override
+    public boolean sellReservation(Long itemId, Long orderId) {
+        return transitionReservation(itemId, orderId, ItemStatus.SOLD);
+    }
+
+    private boolean transitionReservation(Long itemId, Long orderId, ItemStatus next) {
+        if (orderId == null) {
+            return false;
+        }
+        return itemMapper.update(null, new LambdaUpdateWrapper<Item>()
+                .eq(Item::getId, itemId)
+                .eq(Item::getStatus, ItemStatus.RESERVED)
+                .eq(Item::getReservedOrderId, orderId)
+                .set(Item::getStatus, next)
+                .set(Item::getReservedOrderId, null)
+                .set(Item::getUpdatedAt, LocalDateTime.now(ZoneOffset.UTC))
+                .setSql("version = version + 1")) == 1;
     }
 
     private Item withImages(Item item) {
@@ -143,7 +183,7 @@ public class MysqlItemRepository implements ItemRepository {
             image.setItemId(item.getId());
             image.setImageUrl(imageUrls.get(i));
             image.setSortOrder(i);
-            image.setCreatedAt(LocalDateTime.now());
+            image.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
             itemImageMapper.insert(image);
         }
     }

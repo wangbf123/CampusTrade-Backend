@@ -24,5 +24,14 @@ public interface TradeOrderRepository {
 
     List<TradeOrder> findExpiredPending(LocalDateTime now);
 
+    List<TradeOrder> findExpiredPending(LocalDateTime now, int limit);
+
+    List<TradeOrder> findPendingExpiringBefore(LocalDateTime horizon, LocalDateTime afterExpireAt,
+                                              Long afterId, int limit);
+
     boolean updateStatusIfCurrent(Long orderId, OrderStatus expected, OrderStatus next, Consumer<TradeOrder> mutation);
+
+    boolean confirmIfPendingAndNotExpired(Long orderId, Consumer<TradeOrder> mutation);
+
+    boolean expireIfPendingAndDue(Long orderId, Consumer<TradeOrder> mutation);
 }

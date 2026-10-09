@@ -9,6 +9,11 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
+import java.util.UUID;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -67,37 +72,72 @@ public class MysqlNotificationOutboxRepository implements NotificationOutboxRepo
     }
 
     @Override
-    public long countPendingDue(LocalDateTime now) {
-        return outboxMapper.selectCount(new LambdaQueryWrapper<NotificationOutboxEvent>()
-                .eq(NotificationOutboxEvent::getStatus, OutboxStatus.PENDING)
-                .and(wrapper -> wrapper
-                        .isNull(NotificationOutboxEvent::getNextRetryAt)
-                        .or()
-                        .le(NotificationOutboxEvent::getNextRetryAt, now)));
+    public long countPendingDue(LocalDateTime now) { return outboxMapper.countPendingDue(); }
+
+    /** The row locks and claim updates commit before any remote publish occurs. Database time owns leases. */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public List<NotificationOutboxEvent> claimDue(LocalDateTime now, int limit, Duration lease) {
+        int safeLimit = Math.min(100, Math.max(1, limit));
+        List<NotificationOutboxEvent> events = new ArrayList<>(outboxMapper.selectExpiredClaimCandidates(safeLimit));
+        if (events.size() < safeLimit) {
+            events.addAll(outboxMapper.selectPendingClaimCandidates(safeLimit - events.size()));
+        }
+        for (NotificationOutboxEvent event : events) {
+            String token = UUID.randomUUID().toString();
+            outboxMapper.claim(event.getId(), token, Math.max(1, lease.toSeconds()));
+            event.setStatus(OutboxStatus.PROCESSING);
+            event.setClaimToken(token);
+        }
+        return events;
     }
 
     @Override
-    public boolean markPublished(String eventId) {
-        int rows = outboxMapper.update(null, new LambdaUpdateWrapper<NotificationOutboxEvent>()
-                .eq(NotificationOutboxEvent::getEventId, eventId)
-                .eq(NotificationOutboxEvent::getStatus, OutboxStatus.PENDING)
-                .set(NotificationOutboxEvent::getStatus, OutboxStatus.PUBLISHED)
-                .set(NotificationOutboxEvent::getUpdatedAt, LocalDateTime.now()));
-        return rows == 1;
+    public boolean renewLease(String eventId, String claimToken, Duration lease) {
+        return outboxMapper.renewLease(eventId, claimToken, Math.max(1, lease.toSeconds())) == 1;
     }
 
     @Override
-    public boolean markFailed(String eventId, String reason, LocalDateTime nextRetryAt, int maxRetry) {
-        int safeMaxRetry = Math.max(1, maxRetry);
-        int rows = outboxMapper.update(null, new LambdaUpdateWrapper<NotificationOutboxEvent>()
-                .eq(NotificationOutboxEvent::getEventId, eventId)
-                .eq(NotificationOutboxEvent::getStatus, OutboxStatus.PENDING)
-                .set(NotificationOutboxEvent::getLastError, reason)
-                .set(NotificationOutboxEvent::getNextRetryAt, nextRetryAt)
-                .set(NotificationOutboxEvent::getUpdatedAt, LocalDateTime.now())
-                .setSql("retry_count = retry_count + 1")
-                .setSql("status = CASE WHEN retry_count + 1 >= " + safeMaxRetry
-                        + " THEN 'FAILED' ELSE 'PENDING' END"));
-        return rows == 1;
+    public boolean markPublished(String eventId, String claimToken) {
+        return outboxMapper.markPublished(eventId, claimToken) == 1;
     }
+
+    @Override
+    public boolean markFailed(String eventId, String claimToken, String reason, long retryDelaySeconds, int maxRetry) {
+        String boundedReason = reason == null ? "Publish failed" : reason.substring(0, Math.min(500, reason.length()));
+        return outboxMapper.markFailed(eventId, claimToken, boundedReason,
+                Math.max(1, retryDelaySeconds), Math.max(1, maxRetry)) == 1;
+    }
+
+    @Override
+    public boolean replay(String eventId, boolean includePublished) {
+        LambdaUpdateWrapper<NotificationOutboxEvent> update = new LambdaUpdateWrapper<NotificationOutboxEvent>()
+                .eq(NotificationOutboxEvent::getEventId, eventId);
+        if (includePublished) {
+            update.in(NotificationOutboxEvent::getStatus, OutboxStatus.FAILED, OutboxStatus.PUBLISHED);
+        } else {
+            update.eq(NotificationOutboxEvent::getStatus, OutboxStatus.FAILED);
+        }
+        return outboxMapper.update(null, update
+                .set(NotificationOutboxEvent::getStatus, OutboxStatus.PENDING)
+                .set(NotificationOutboxEvent::getRetryCount, 0)
+                .set(NotificationOutboxEvent::getLastError, null)
+                .set(NotificationOutboxEvent::getClaimToken, null)
+                .set(NotificationOutboxEvent::getLeaseUntil, null)
+                .setSql("next_retry_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6), replay_count = replay_count + 1")) == 1;
+    }
+
+    @Override
+    public List<NotificationOutboxEvent> findByStatus(OutboxStatus status, int limit) {
+        return outboxMapper.selectList(new LambdaQueryWrapper<NotificationOutboxEvent>()
+                .eq(NotificationOutboxEvent::getStatus, status)
+                .orderByAsc(NotificationOutboxEvent::getCreatedAt, NotificationOutboxEvent::getId)
+                .last("LIMIT " + Math.min(100, Math.max(1, limit))));
+    }
+
+    @Override
+    public long countExpiredLeases(LocalDateTime now) { return outboxMapper.countExpiredLeases(); }
+
+    @Override
+    public long oldestUnpublishedAgeSeconds(LocalDateTime now) { return outboxMapper.oldestUnpublishedAgeSeconds(); }
 }

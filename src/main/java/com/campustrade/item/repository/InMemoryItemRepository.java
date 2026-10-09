@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -24,7 +25,7 @@ public class InMemoryItemRepository implements ItemRepository {
 
     @Override
     public synchronized Item save(Item item) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         if (item.getId() == null) {
             item.setId(idGenerator.incrementAndGet());
             item.setCreatedAt(now);
@@ -73,7 +74,7 @@ public class InMemoryItemRepository implements ItemRepository {
         }
         item.setStatus(next);
         item.setVersion(item.getVersion() + 1);
-        item.setUpdatedAt(LocalDateTime.now());
+        item.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
         return true;
     }
 
@@ -82,7 +83,44 @@ public class InMemoryItemRepository implements ItemRepository {
         Item item = items.get(itemId);
         if (item != null) {
             item.setViewCount(item.getViewCount() + 1);
-            item.setUpdatedAt(LocalDateTime.now());
+            item.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
         }
+    }
+
+    @Override
+    public synchronized boolean reserveIfOnSale(Long itemId, Long orderId) {
+        Item item = items.get(itemId);
+        if (orderId == null || item == null || item.getStatus() != ItemStatus.ON_SALE
+                || item.getReservedOrderId() != null) {
+            return false;
+        }
+        item.setStatus(ItemStatus.RESERVED);
+        item.setReservedOrderId(orderId);
+        item.setVersion(item.getVersion() + 1);
+        item.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        return true;
+    }
+
+    @Override
+    public synchronized boolean releaseReservation(Long itemId, Long orderId) {
+        return transitionReservation(itemId, orderId, ItemStatus.ON_SALE);
+    }
+
+    @Override
+    public synchronized boolean sellReservation(Long itemId, Long orderId) {
+        return transitionReservation(itemId, orderId, ItemStatus.SOLD);
+    }
+
+    private boolean transitionReservation(Long itemId, Long orderId, ItemStatus next) {
+        Item item = items.get(itemId);
+        if (orderId == null || item == null || item.getStatus() != ItemStatus.RESERVED
+                || !orderId.equals(item.getReservedOrderId())) {
+            return false;
+        }
+        item.setStatus(next);
+        item.setReservedOrderId(null);
+        item.setVersion(item.getVersion() + 1);
+        item.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        return true;
     }
 }

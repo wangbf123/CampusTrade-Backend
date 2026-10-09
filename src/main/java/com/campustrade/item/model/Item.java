@@ -24,6 +24,7 @@ public class Item {
     private String campus;
     private String tradePlace;
     private ItemStatus status;
+    private Long reservedOrderId;
     private long viewCount;
     private long favoriteCount;
     private long version;
@@ -110,6 +111,14 @@ public class Item {
 
     public void setStatus(ItemStatus status) {
         this.status = status;
+    }
+
+    public Long getReservedOrderId() {
+        return reservedOrderId;
+    }
+
+    public void setReservedOrderId(Long reservedOrderId) {
+        this.reservedOrderId = reservedOrderId;
     }
 
     public long getViewCount() {

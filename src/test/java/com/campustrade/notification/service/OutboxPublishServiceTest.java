@@ -9,6 +9,7 @@ import com.campustrade.notification.repository.InMemoryNotificationOutboxReposit
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class OutboxPublishServiceTest {
 
@@ -56,6 +57,15 @@ class OutboxPublishServiceTest {
         NotificationOutboxEvent latest = outboxRepository.findByEventId(event.getEventId()).orElseThrow();
         assertEquals(OutboxStatus.PENDING, latest.getStatus());
         assertEquals(1, latest.getRetryCount());
+    }
+
+    @Test
+    void missingEventIdentityCannotCreateANonIdempotentMessage() {
+        InMemoryMessageRepository messages = new InMemoryMessageRepository();
+        var consumer = new NotificationMessageConsumer(new MessageService(messages));
+        assertThrows(IllegalArgumentException.class, () -> consumer.consume(
+                new NotificationEventPayload(null, 1001L, "TEST", "title", "content", null)));
+        assertEquals(0, messages.findByReceiverId(1001L).size());
     }
 
     @Test

@@ -30,7 +30,8 @@ public class RabbitNotificationConfig {
 
     @Bean
     public Queue notificationQueue(RabbitNotificationProperties properties) {
-        return QueueBuilder.durable(properties.getNotificationQueue())
+        return QueueBuilder.durable(properties.getNotificationQueue()).quorum()
+                .withArgument("x-dead-letter-strategy", "at-least-once").withArgument("x-overflow", "reject-publish")
                 .deadLetterExchange(properties.getNotificationDeadLetterExchange())
                 .deadLetterRoutingKey(properties.getNotificationDeadLetterRoutingKey())
                 .build();
@@ -38,7 +39,7 @@ public class RabbitNotificationConfig {
 
     @Bean
     public Queue notificationDeadLetterQueue(RabbitNotificationProperties properties) {
-        return QueueBuilder.durable(properties.getNotificationDeadLetterQueue()).build();
+        return QueueBuilder.durable(properties.getNotificationDeadLetterQueue()).quorum().build();
     }
 
     @Bean
@@ -61,6 +62,27 @@ public class RabbitNotificationConfig {
         return BindingBuilder.bind(notificationDeadLetterQueue)
                 .to(notificationDeadLetterExchange)
                 .with(properties.getNotificationDeadLetterRoutingKey());
+    }
+
+    @Bean
+    public DirectExchange notificationRetryExchange(RabbitNotificationProperties properties) {
+        return new DirectExchange(properties.getNotificationRetryExchange(), true, false);
+    }
+
+    @Bean
+    public Queue notificationRetryQueue(RabbitNotificationProperties properties) {
+        return QueueBuilder.durable(properties.getNotificationRetryQueue()).quorum()
+                .withArgument("x-dead-letter-strategy", "at-least-once").withArgument("x-overflow", "reject-publish")
+                .ttl(Math.max(100, properties.getConsumerRetryDelayMs()))
+                .deadLetterExchange(properties.getNotificationExchange())
+                .deadLetterRoutingKey(properties.getNotificationRoutingKey()).build();
+    }
+
+    @Bean
+    public Binding notificationRetryBinding(DirectExchange notificationRetryExchange, Queue notificationRetryQueue,
+                                           RabbitNotificationProperties properties) {
+        return BindingBuilder.bind(notificationRetryQueue).to(notificationRetryExchange)
+                .with(properties.getNotificationRetryRoutingKey());
     }
 
     @Bean
